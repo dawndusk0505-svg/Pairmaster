@@ -54,6 +54,21 @@ function shuffleGridValues(g: Grid, innerRows: number, innerCols: number): Grid 
   return nextGrid;
 }
 
+interface FloatingLinkEmoji {
+  id: string;
+  xPct: number;
+  yPct: number;
+  emoji: string;
+  animClass: 'animate-float-emoji-left' | 'animate-float-emoji-center' | 'animate-float-emoji-right';
+}
+
+const CUTE_LINK_EMOJIS = ['💖', '✨', '🌟', '💕', '🌸', '🎀', '💫', '🍭'];
+const LINK_TRAJECTORY_CLASSES: FloatingLinkEmoji['animClass'][] = [
+  'animate-float-emoji-left',
+  'animate-float-emoji-center',
+  'animate-float-emoji-right',
+];
+
 interface LinkMatchGameProps {
   customTheme?: MatchTheme | null;
   onUpdateCustomTheme?: (theme: MatchTheme) => void;
@@ -85,7 +100,8 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   const [highScore, setHighScore] = useState(0);
   const [isNewRecord, setIsNewRecord] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'cloud' | 'anonymous' | 'local' | null>(null);
-  const { getCloudHighScore, saveGameScore } = useFirebase();
+  const [floatingEmojis, setFloatingEmojis] = useState<FloatingLinkEmoji[]>([]);
+  const { getCloudHighScore, getPublicStageBest, saveGameScore } = useFirebase();
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -101,6 +117,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   const availableThemes = customTheme ? [...MATCH_THEMES, customTheme] : MATCH_THEMES;
   const cloudHigh = getCloudHighScore('link', difficulty.id, selectedTheme.id);
   const displayedHighScore = Math.max(highScore, cloudHigh);
+  const publicStageBest = getPublicStageBest('link', difficulty.id, selectedTheme.id);
   const displayedHighScoreRef = useRef(displayedHighScore);
   displayedHighScoreRef.current = displayedHighScore;
 
@@ -175,6 +192,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
     setIsVictory(false);
     setIsNewRecord(false);
     setSyncStatus(null);
+    setFloatingEmojis([]);
     setRemainingTiles(totalCells);
     setHintCount(3);
     setShuffleCount(3);
@@ -317,6 +335,26 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
 
         const p1 = selectedPoint;
         const p2 = { r, c };
+
+        // Spawn floating cute stars/hearts at both eliminated tile centers
+        const burstPool = currentCombo >= 2 ? ['🌟', '💖', '👑', '✨', '💕', '🌸'] : CUTE_LINK_EMOJIS;
+        const burstPrefix = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const spawned: FloatingLinkEmoji[] = [p1, p2].flatMap((pt, ptIdx) => {
+          const xPct = ((pt.c + 0.5) / totalCols) * 100;
+          const yPct = ((pt.r + 0.5) / totalRows) * 100;
+          return LINK_TRAJECTORY_CLASSES.map((animClass, tIdx) => ({
+            id: `${burstPrefix}_${ptIdx}_${tIdx}`,
+            xPct,
+            yPct,
+            emoji: burstPool[Math.floor(Math.random() * burstPool.length)],
+            animClass,
+          }));
+        });
+        const spawnedIds = new Set(spawned.map((s) => s.id));
+        setFloatingEmojis((prev) => [...prev, ...spawned]);
+        scheduleTimeout(() => {
+          setFloatingEmojis((prev) => prev.filter((item) => !spawnedIds.has(item.id)));
+        }, 950);
 
         scheduleTimeout(() => {
           setConnectingPath(null);
@@ -501,20 +539,35 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
           </div>
         </div>
 
-        {/* Personal Best Strip (Visible above board) */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-amber-50/90 via-pink-50/80 to-rose-50/70 border border-amber-200/80 text-xs">
-          <div className="flex items-center gap-2 font-bold text-slate-700">
-            <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
-            <span>本關最高紀錄：</span>
-            <span className="font-mono font-black text-rose-600 text-sm tabular-nums">
-              {displayedHighScore > 0 ? `${displayedHighScore} 分` : '尚無紀錄'}
-            </span>
-            {cloudHigh > 0 && (
-              <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-pink-500">
-                <Cloud className="w-3 h-3" />
-                <span>雲端同步</span>
+        {/* Stage Public Best & Personal Best Strip (Visible above board) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-amber-50/90 via-pink-50/80 to-rose-50/70 border border-amber-200/80 text-xs">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-bold text-slate-700">
+            <div className="flex items-center gap-1.5">
+              <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>全服本關最高：</span>
+              <span className="font-mono font-black text-amber-600 text-sm tabular-nums">
+                {publicStageBest ? `${publicStageBest.highScore} 分` : '尚無人上榜'}
               </span>
-            )}
+              {publicStageBest && (
+                <span className="text-[11px] font-bold text-slate-500">
+                  （{publicStageBest.displayName}）
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-300 hidden sm:inline" aria-hidden="true">|</span>
+              <span>我的最高：</span>
+              <span className="font-mono font-black text-rose-600 text-sm tabular-nums">
+                {displayedHighScore > 0 ? `${displayedHighScore} 分` : '尚無紀錄'}
+              </span>
+              {cloudHigh > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-pink-500">
+                  <Cloud className="w-3 h-3" />
+                  <span>雲端同步</span>
+                </span>
+              )}
+            </div>
           </div>
           {onOpenMyRecords && (
             <button
@@ -582,9 +635,23 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
       </div>
 
       {/* Board Layout Container */}
-      <div className="bg-white/70 rounded-3xl border-2 border-pink-200/70 p-2 sm:p-4 shadow-lg shadow-pink-100 overflow-hidden">
-        {/* Tightly wrapped unpadded relative layer so SVG laser coordinates align dead-center with tiles */}
+      <div className="bg-white/70 rounded-3xl border-2 border-pink-200/70 p-2 sm:p-4 shadow-lg shadow-pink-100 overflow-visible">
+        {/* Tightly wrapped unpadded relative layer so SVG laser & floating emojis align dead-center with tiles */}
         <div className="relative w-full">
+          {floatingEmojis.length > 0 && (
+            <div className="absolute inset-0 pointer-events-none z-40 overflow-visible" aria-hidden="true">
+              {floatingEmojis.map((fx) => (
+                <span
+                  key={fx.id}
+                  style={{ left: `${fx.xPct}%`, top: `${fx.yPct}%` }}
+                  className={`absolute select-none text-lg sm:text-2xl drop-shadow-sm ${fx.animClass}`}
+                >
+                  {fx.emoji}
+                </span>
+              ))}
+            </div>
+          )}
+
           {connectingPath && (
             <svg
               viewBox="0 0 100 100"

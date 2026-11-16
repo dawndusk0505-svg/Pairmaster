@@ -162,6 +162,15 @@ interface FirebaseContextValue {
   signOutUser: () => Promise<void>;
   scoresMap: Record<string, CloudUserScore>;
   getCloudHighScore: (gameMode: 'flip' | 'link', difficultyId: string, themeId: string) => number;
+  leaderboardEntries: CloudLeaderboardEntry[];
+  leaderboardLoading: boolean;
+  leaderboardError: string | null;
+  anonAuthDisabled: boolean;
+  getPublicStageBest: (
+    gameMode: 'flip' | 'link',
+    difficultyId: string,
+    themeId: string
+  ) => CloudLeaderboardEntry | null;
   saveGameScore: (input: SaveGameScoreInput) => Promise<'cloud' | 'anonymous' | 'local'>;
   cloudCustomTheme: MatchTheme | null;
   saveCustomTheme: (theme: MatchTheme) => Promise<void>;
@@ -245,6 +254,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [cloudError, setCloudError] = useState<string | null>(null);
 
   const [scoresMap, setScoresMap] = useState<Record<string, CloudUserScore>>({});
+  const [leaderboardEntries, setLeaderboardEntries] = useState<CloudLeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [anonAuthDisabled, setAnonAuthDisabled] = useState(false);
   const [cloudCustomTheme, setCloudCustomTheme] = useState<MatchTheme | null>(null);
   const [compatibilityLogs, setCompatibilityLogs] = useState<CloudCompatibilityLog[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -375,6 +388,50 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       },
       (error) => {
         handleFirestoreError(error, OperationType.LIST, noticesPath);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  // Public listener for shared global leaderboard (visible to all visitors & logged-in players)
+  useEffect(() => {
+    const lbPath = 'leaderboard';
+    const lbQuery = query(
+      collection(db, lbPath),
+      where('isPublic', '==', true),
+      limit(200)
+    );
+    const unsub = onSnapshot(
+      lbQuery,
+      (snapshot) => {
+        const list: CloudLeaderboardEntry[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            userId: String(data.userId ?? ''),
+            displayName: String(data.displayName ?? ANONYMOUS_DISPLAY_NAME),
+            gameMode: data.gameMode === 'link' ? 'link' : 'flip',
+            themeId: String(data.themeId ?? ''),
+            themeName: String(data.themeName ?? '糖果萌星'),
+            difficultyId: String(data.difficultyId ?? 'medium'),
+            highScore: Number(data.highScore ?? 0),
+            bestTimeSec: Number(data.bestTimeSec ?? 0),
+            stars: Number(data.stars ?? 1),
+            isPublic: Boolean(data.isPublic),
+          };
+        });
+        setLeaderboardEntries(list);
+        setLeaderboardLoading(false);
+        setLeaderboardError(null);
+      },
+      (error) => {
+        setLeaderboardLoading(false);
+        setLeaderboardError('暫時未能讀取雲端全服榜，請檢查網絡或稍後再試。');
+        try {
+          handleFirestoreError(error, OperationType.LIST, lbPath);
+        } catch {
+          // already logged cleanly
+        }
       }
     );
     return () => unsub();
@@ -580,6 +637,32 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [scoresMap]
   );
 
+  const getPublicStageBest = useCallback(
+    (gameMode: 'flip' | 'link', difficultyId: string, themeId: string): CloudLeaderboardEntry | null => {
+      const safeMode = sanitizeId(gameMode, 8, 'flip');
+      const safeDiff = sanitizeId(difficultyId, 32, 'medium');
+      const safeTheme = sanitizeId(themeId, 40, 'candy-spirits');
+      let best: CloudLeaderboardEntry | null = null;
+      for (const entry of leaderboardEntries) {
+        if (
+          entry.gameMode === safeMode &&
+          entry.difficultyId === safeDiff &&
+          entry.themeId === safeTheme
+        ) {
+          if (
+            !best ||
+            entry.highScore > best.highScore ||
+            (entry.highScore === best.highScore && entry.bestTimeSec < best.bestTimeSec)
+          ) {
+            best = entry;
+          }
+        }
+      }
+      return best;
+    },
+    [leaderboardEntries]
+  );
+
   const saveGameScore = useCallback(
     async (input: SaveGameScoreInput): Promise<'cloud' | 'anonymous' | 'local'> => {
       try {
@@ -592,12 +675,14 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           try {
             const anonCred = await signInAnonymously(auth);
             activeUser = anonCred.user;
+            setAnonAuthDisabled(false);
           } catch (anonErr) {
             const errCode = (anonErr as { code?: string })?.code || '';
             if (
               errCode === 'auth/operation-not-allowed' ||
               errCode === 'auth/admin-restricted-operation'
             ) {
+              setAnonAuthDisabled(true);
               return 'local';
             }
             throw anonErr;
@@ -1003,6 +1088,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         signOutUser,
         scoresMap,
         getCloudHighScore,
+        leaderboardEntries,
+        leaderboardLoading,
+        leaderboardError,
+        anonAuthDisabled,
+        getPublicStageBest,
         saveGameScore,
         cloudCustomTheme,
         saveCustomTheme,

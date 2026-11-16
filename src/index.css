@@ -22,6 +22,63 @@
   .rotate-y-180 {
     transform: rotateY(180deg);
   }
+  .animate-float-emoji-left {
+    animation: floatEmojiLeft 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    will-change: transform, opacity;
+  }
+  .animate-float-emoji-center {
+    animation: floatEmojiCenter 0.95s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    will-change: transform, opacity;
+  }
+  .animate-float-emoji-right {
+    animation: floatEmojiRight 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    will-change: transform, opacity;
+  }
+}
+
+@keyframes floatEmojiLeft {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -20%) scale(0.4) rotate(0deg);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-80%, -70%) scale(1.25) rotate(-14deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-120%, -195%) scale(0.95) rotate(-22deg);
+  }
+}
+
+@keyframes floatEmojiCenter {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -20%) scale(0.45) rotate(0deg);
+  }
+  22% {
+    opacity: 1;
+    transform: translate(-50%, -85%) scale(1.35) rotate(6deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -225%) scale(1) rotate(-6deg);
+  }
+}
+
+@keyframes floatEmojiRight {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -20%) scale(0.4) rotate(0deg);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-20%, -70%) scale(1.25) rotate(14deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(20%, -195%) scale(0.95) rotate(22deg);
+  }
 }
 
 /* Custom cute pink scrollbar */

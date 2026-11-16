@@ -334,9 +334,12 @@ service cloud.firestore {
 
     match /leaderboard/{entryId} {
       allow get: if isValidId(entryId)
-        && ((resource.data.isPublic == true && resource.data.highScore >= 0) || (isSignedIn() && resource.data.userId == request.auth.uid));
-      allow list: if resource.data.isPublic == true
-        && resource.data.highScore >= 0;
+        && (
+          resource == null
+          || (resource.data.isPublic == true && resource.data.highScore >= 0)
+          || (isSignedIn() && resource.data.userId == request.auth.uid)
+        );
+      allow list: if resource.data.isPublic == true;
       allow create: if canWriteLeaderboard(incoming())
         && isValidId(entryId)
         && isValidLeaderboardEntry(incoming())
@@ -360,7 +363,7 @@ service cloud.firestore {
     }
 
     match /dailyNotices/{noticeId} {
-      allow get: if isValidId(noticeId) && (isAdmin() || resource.data.isActive == true);
+      allow get: if isValidId(noticeId) && (isAdmin() || resource == null || resource.data.isActive == true);
       allow list: if resource.data.isActive == true;
       allow create: if isAdmin()
         && isValidId(noticeId)

@@ -1,8 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { X, Trophy, Crown, Clock, Cloud, Sparkles, LogIn, Medal, Smartphone, Copy, Check } from 'lucide-react';
-import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { CloudLeaderboardEntry, useFirebase } from '../contexts/FirebaseContext';
+import { X, Trophy, Crown, Clock, Cloud, Sparkles, LogIn, Medal, Smartphone, Copy, Check, AlertCircle } from 'lucide-react';
+import { useFirebase } from '../contexts/FirebaseContext';
 import { MATCH_THEMES } from '../data/matchThemes';
 import { soundFx } from '../utils/audio';
 
@@ -93,10 +91,18 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   onClose,
   initialTab = 'global',
 }) => {
-  const { user, isVerifiedGoogleUser, signInWithGoogle, isAuthBusy, scoresMap } = useFirebase();
+  const {
+    user,
+    isVerifiedGoogleUser,
+    signInWithGoogle,
+    isAuthBusy,
+    scoresMap,
+    leaderboardEntries,
+    leaderboardLoading,
+    leaderboardError,
+    anonAuthDisabled,
+  } = useFirebase();
   const [activeTab, setActiveTab] = useState<'global' | 'mine'>(initialTab);
-  const [entries, setEntries] = useState<CloudLeaderboardEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [filterMode, setFilterMode] = useState<'all' | 'flip' | 'link'>('all');
   const [copiedUid, setCopiedUid] = useState(false);
 
@@ -116,48 +122,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
       setActiveTab(initialTab);
     }
   }, [isOpen, initialTab]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    setIsLoading(true);
-
-    const lbPath = 'leaderboard';
-    const lbQuery = query(
-      collection(db, lbPath),
-      where('isPublic', '==', true),
-      limit(60)
-    );
-
-    const unsub = onSnapshot(
-      lbQuery,
-      (snapshot) => {
-        const list: CloudLeaderboardEntry[] = snapshot.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            userId: String(data.userId ?? ''),
-            displayName: String(data.displayName ?? '糖果玩家'),
-            gameMode: data.gameMode === 'link' ? 'link' : 'flip',
-            themeId: String(data.themeId ?? ''),
-            themeName: String(data.themeName ?? '糖果萌星'),
-            difficultyId: String(data.difficultyId ?? 'medium'),
-            highScore: Number(data.highScore ?? 0),
-            bestTimeSec: Number(data.bestTimeSec ?? 0),
-            stars: Number(data.stars ?? 1),
-            isPublic: Boolean(data.isPublic),
-          };
-        });
-        setEntries(list);
-        setIsLoading(false);
-      },
-      (error) => {
-        setIsLoading(false);
-        handleFirestoreError(error, OperationType.LIST, lbPath);
-      }
-    );
-
-    return () => unsub();
-  }, [isOpen]);
 
   const personalRecords = useMemo(() => {
     if (!isOpen) return [];
@@ -193,14 +157,14 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   }, [isOpen, scoresMap, filterMode]);
 
   const filteredEntries = useMemo(() => {
-    return entries
+    return leaderboardEntries
       .filter((e) => (filterMode === 'all' ? true : e.gameMode === filterMode))
       .sort((a, b) => {
         if (b.highScore !== a.highScore) return b.highScore - a.highScore;
         return a.bestTimeSec - b.bestTimeSec;
       })
-      .slice(0, 20);
-  }, [entries, filterMode]);
+      .slice(0, 50);
+  }, [leaderboardEntries, filterMode]);
 
   const allPersonalCount = useMemo(() => {
     if (!isOpen) return Object.keys(scoresMap).length;
@@ -476,20 +440,37 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 </div>
               ))
             )
-          ) : isLoading ? (
+          ) : leaderboardLoading ? (
             <div className="py-12 text-center text-xs font-bold text-pink-500">
               正在讀取雲端榮譽榜...
+            </div>
+          ) : leaderboardError ? (
+            <div className="py-10 px-4 text-center space-y-2 bg-rose-50/70 border border-rose-200 rounded-2xl">
+              <AlertCircle className="w-7 h-7 text-rose-400 mx-auto" />
+              <p className="text-sm font-black text-rose-700">{leaderboardError}</p>
+              <p className="text-xs text-slate-500 font-medium">
+                個人本地分數仍安全保存於「我的最高紀錄」分頁。
+              </p>
             </div>
           ) : filteredEntries.length === 0 ? (
             <div className="py-12 text-center space-y-2">
               <Sparkles className="w-8 h-8 text-pink-300 mx-auto" />
               <p className="text-sm font-black text-slate-700">暫時未有上榜紀錄</p>
               <p className="text-xs text-slate-500 font-medium">
-                登入並完成一局配對遊戲，成為第一位榮譽榜冠軍吧！
+                完成任何一局配對遊戲，即可自動登上全服榮譽榜！
               </p>
             </div>
           ) : (
-            filteredEntries.map((entry, idx) => {
+            <>
+              {anonAuthDisabled && (
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-800 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <span>
+                    未登入訪客目前只會保存於本機；如要讓未登入玩家亦以「唔知邊個(unknown)」登上全服榜，請於 Firebase Console 啟用「匿名 (Anonymous)」登入方式。
+                  </span>
+                </div>
+              )}
+              {filteredEntries.map((entry, idx) => {
               const isMe = user?.uid === entry.userId;
               const rank = idx + 1;
               return (
@@ -552,6 +533,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 </div>
               );
             })
+            }</>
           )}
         </div>
       </div>
