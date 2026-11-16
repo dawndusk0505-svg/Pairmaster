@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Cake,
   HeartHandshake,
@@ -11,6 +11,7 @@ import {
   CalendarPlus,
   ZoomIn,
   X,
+  Music,
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { soundFx } from '../utils/audio';
@@ -46,9 +47,69 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
   } = useFirebase();
 
   const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; caption: string } | null>(null);
+  const hasPlayedBirthdayRef = useRef<string | null>(null);
 
   const hasAnyNotice = Boolean(todayBirthdayNotice || todayConfessionNotice);
   const pendingCount = isSuperAdmin ? pendingNoticeRequests.length : 0;
+
+  useEffect(() => {
+    if (!todayBirthdayNotice) {
+      soundFx.stopHappyBirthday();
+      return;
+    }
+
+    const noticeKey = `${todayBirthdayNotice.activeDate}_${todayBirthdayNotice.recipientName}`;
+    if (hasPlayedBirthdayRef.current === noticeKey) return;
+
+    let cancelled = false;
+    let removeListeners: (() => void) | null = null;
+
+    const triggerOnce = async () => {
+      if (cancelled || hasPlayedBirthdayRef.current === noticeKey) return;
+      const status = await soundFx.playHappyBirthday();
+      if (cancelled) {
+        soundFx.stopHappyBirthday();
+        return;
+      }
+
+      if (status === 'played' || status === 'muted') {
+        hasPlayedBirthdayRef.current = noticeKey;
+        return;
+      }
+
+      // Autoplay blocked by browser policy on initial page load: wait for first user tap/key
+      const handleFirstGesture = async (event: Event) => {
+        removeListeners?.();
+        removeListeners = null;
+        if (cancelled || hasPlayedBirthdayRef.current === noticeKey) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest('[data-birthday-replay="true"]')) {
+          return;
+        }
+        hasPlayedBirthdayRef.current = noticeKey;
+        await soundFx.playHappyBirthday();
+      };
+
+      const opts: AddEventListenerOptions = { capture: true, passive: true };
+      window.addEventListener('pointerdown', handleFirstGesture, opts);
+      window.addEventListener('touchstart', handleFirstGesture, opts);
+      window.addEventListener('keydown', handleFirstGesture, { capture: true });
+
+      removeListeners = () => {
+        window.removeEventListener('pointerdown', handleFirstGesture, { capture: true });
+        window.removeEventListener('touchstart', handleFirstGesture, { capture: true });
+        window.removeEventListener('keydown', handleFirstGesture, { capture: true });
+      };
+    };
+
+    void triggerOnce();
+
+    return () => {
+      cancelled = true;
+      removeListeners?.();
+      soundFx.stopHappyBirthday();
+    };
+  }, [todayBirthdayNotice]);
 
   return (
     <section
@@ -239,9 +300,24 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                           </div>
                         </div>
 
-                        <span className="text-xl select-none" aria-hidden="true">
-                          🎈✨🎁
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            data-birthday-replay="true"
+                            onClick={() => {
+                              hasPlayedBirthdayRef.current = `${todayBirthdayNotice.activeDate}_${todayBirthdayNotice.recipientName}`;
+                              void soundFx.playHappyBirthday();
+                            }}
+                            className="px-2.5 py-1 text-[11px] font-black text-rose-700 bg-white/95 hover:bg-rose-50 border border-rose-200 rounded-xl shadow-xs flex items-center gap-1 cursor-pointer transition-transform active:scale-95"
+                            title="播放生日快樂歌"
+                          >
+                            <Music className="w-3.5 h-3.5 text-rose-500" />
+                            <span>播生日歌</span>
+                          </button>
+                          <span className="text-xl select-none" aria-hidden="true">
+                            🎈✨🎁
+                          </span>
+                        </div>
                       </div>
 
                       {/* Birthday VIP Superstar Spotlight */}

@@ -6,6 +6,8 @@
 class SoundEffects {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
+  private birthdayNodes: OscillatorNode[] = [];
+  private birthdayMasterGain: GainNode | null = null;
 
   constructor() {
     // Read muted preference from localStorage if available
@@ -27,12 +29,17 @@ class SoundEffects {
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {
+        // Autoplay policy may block resume before user gesture
+      });
     }
   }
 
   public toggleMute(): boolean {
     this.isMuted = !this.isMuted;
+    if (this.isMuted) {
+      this.stopHappyBirthday();
+    }
     try {
       localStorage.setItem('pairmaster_audio_muted', JSON.stringify(this.isMuted));
     } catch {
@@ -248,6 +255,162 @@ class SoundEffects {
 
     osc.start(now);
     osc.stop(now + 0.14);
+  }
+
+  /**
+   * Stop any currently playing Happy Birthday melody cleanly
+   */
+  public stopHappyBirthday() {
+    this.birthdayNodes.forEach((osc) => {
+      try {
+        osc.stop();
+        osc.disconnect();
+      } catch {
+        // Node already stopped or disconnected
+      }
+    });
+    this.birthdayNodes = [];
+    if (this.birthdayMasterGain) {
+      try {
+        this.birthdayMasterGain.disconnect();
+      } catch {
+        // Already disconnected
+      }
+      this.birthdayMasterGain = null;
+    }
+  }
+
+  /**
+   * Celebratory celesta/music-box "Happy Birthday to You" melody (F major).
+   * Returns 'blocked' when browser autoplay policy prevents unmuted playback without user gesture.
+   */
+  public async playHappyBirthday(): Promise<'played' | 'muted' | 'blocked'> {
+    if (this.isMuted) return 'muted';
+    this.initContext();
+    if (!this.ctx) return 'blocked';
+
+    if (this.ctx.state !== 'running') {
+      try {
+        await Promise.race([
+          this.ctx.resume().catch(() => {}),
+          new Promise<void>((resolve) => setTimeout(resolve, 120)),
+        ]);
+      } catch {
+        return 'blocked';
+      }
+    }
+
+    if ((this.ctx.state as string) !== 'running') {
+      return 'blocked';
+    }
+
+    this.stopHappyBirthday();
+
+    const ctx = this.ctx;
+    const masterGain = ctx.createGain();
+    masterGain.gain.setValueAtTime(0.24, ctx.currentTime);
+    masterGain.connect(ctx.destination);
+    this.birthdayMasterGain = masterGain;
+
+    // F Major (C5 pickup) - joyful, crisp music-box register
+    const melody: Array<{ f: number; d: number; gap?: number; isFinal?: boolean }> = [
+      // Phrase 1: Hap-py birth-day to you
+      { f: 523.25, d: 0.25 }, // C5
+      { f: 523.25, d: 0.16 }, // C5
+      { f: 587.33, d: 0.40 }, // D5
+      { f: 523.25, d: 0.40 }, // C5
+      { f: 698.46, d: 0.40 }, // F5
+      { f: 659.25, d: 0.72, gap: 0.08 }, // E5
+
+      // Phrase 2: Hap-py birth-day to you
+      { f: 523.25, d: 0.25 }, // C5
+      { f: 523.25, d: 0.16 }, // C5
+      { f: 587.33, d: 0.40 }, // D5
+      { f: 523.25, d: 0.40 }, // C5
+      { f: 783.99, d: 0.40 }, // G5
+      { f: 698.46, d: 0.72, gap: 0.08 }, // F5
+
+      // Phrase 3: Hap-py birth-day dear superstar
+      { f: 523.25, d: 0.25 }, // C5
+      { f: 523.25, d: 0.16 }, // C5
+      { f: 1046.5, d: 0.40 }, // C6
+      { f: 880.0, d: 0.40 },  // A5
+      { f: 698.46, d: 0.40 }, // F5
+      { f: 659.25, d: 0.40 }, // E5
+      { f: 587.33, d: 0.68, gap: 0.08 }, // D5
+
+      // Phrase 4: Hap-py birth-day to you!
+      { f: 932.33, d: 0.25 }, // Bb5
+      { f: 932.33, d: 0.16 }, // Bb5
+      { f: 880.0, d: 0.40 },  // A5
+      { f: 698.46, d: 0.40 }, // F5
+      { f: 783.99, d: 0.40 }, // G5
+      { f: 698.46, d: 0.98, isFinal: true }, // F5
+    ];
+
+    let offset = 0.04;
+    const now = ctx.currentTime;
+
+    melody.forEach((note) => {
+      const startTime = now + offset;
+      const stopTime = startTime + note.d + 0.08;
+
+      // Warm fundamental voice
+      const mainOsc = ctx.createOscillator();
+      const mainGain = ctx.createGain();
+      mainOsc.type = 'triangle';
+      mainOsc.frequency.setValueAtTime(note.f, startTime);
+
+      mainGain.gain.setValueAtTime(0.0001, startTime);
+      mainGain.gain.linearRampToValueAtTime(0.55, startTime + 0.018);
+      mainGain.gain.exponentialRampToValueAtTime(0.001, startTime + note.d + 0.04);
+
+      mainOsc.connect(mainGain);
+      mainGain.connect(masterGain);
+      mainOsc.start(startTime);
+      mainOsc.stop(stopTime);
+      this.birthdayNodes.push(mainOsc);
+
+      // Soft celesta octave shimmer
+      const shimmerOsc = ctx.createOscillator();
+      const shimmerGain = ctx.createGain();
+      shimmerOsc.type = 'sine';
+      shimmerOsc.frequency.setValueAtTime(note.f * 2, startTime);
+
+      shimmerGain.gain.setValueAtTime(0.0001, startTime);
+      shimmerGain.gain.linearRampToValueAtTime(0.14, startTime + 0.015);
+      shimmerGain.gain.exponentialRampToValueAtTime(0.001, startTime + note.d * 0.85);
+
+      shimmerOsc.connect(shimmerGain);
+      shimmerGain.connect(masterGain);
+      shimmerOsc.start(startTime);
+      shimmerOsc.stop(stopTime);
+      this.birthdayNodes.push(shimmerOsc);
+
+      // Gentle F-major harmony chord on the final note
+      if (note.isFinal) {
+        [349.23, 440.0].forEach((chordFreq) => {
+          const chordOsc = ctx.createOscillator();
+          const chordGain = ctx.createGain();
+          chordOsc.type = 'sine';
+          chordOsc.frequency.setValueAtTime(chordFreq, startTime);
+
+          chordGain.gain.setValueAtTime(0.0001, startTime);
+          chordGain.gain.linearRampToValueAtTime(0.22, startTime + 0.04);
+          chordGain.gain.exponentialRampToValueAtTime(0.001, startTime + note.d + 0.06);
+
+          chordOsc.connect(chordGain);
+          chordGain.connect(masterGain);
+          chordOsc.start(startTime);
+          chordOsc.stop(stopTime);
+          this.birthdayNodes.push(chordOsc);
+        });
+      }
+
+      offset += note.d + (note.gap ?? 0.02);
+    });
+
+    return 'played';
   }
 }
 
