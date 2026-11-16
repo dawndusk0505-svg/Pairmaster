@@ -1,0 +1,305 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Hardened Primitives
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isOwner(userId) && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function parentUserExists(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId));
+    }
+
+    // 3. Entity Validation Blueprints (Synchronized with firebase-blueprint.json)
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'photoURL', 'favoriteMbti', 'createdAt', 'updatedAt'])
+        && data.uid is string
+        && isValidId(data.uid)
+        && data.uid == request.auth.uid
+        && data.uid == userId
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 60
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500))
+        && (!('favoriteMbti' in data) || (data.favoriteMbti is string && data.favoriteMbti.size() == 4 && data.favoriteMbti.matches('^[EI][SN][TF][JP]$')))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserScore(data, userId) {
+      return data.keys().hasAll(['userId', 'gameMode', 'themeId', 'themeName', 'difficultyId', 'highScore', 'bestTimeSec', 'stars', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'gameMode', 'themeId', 'themeName', 'difficultyId', 'highScore', 'bestTimeSec', 'maxCombo', 'stars', 'createdAt', 'updatedAt'])
+        && data.userId is string
+        && isValidId(data.userId)
+        && data.userId == request.auth.uid
+        && data.userId == userId
+        && data.gameMode in ['flip', 'link']
+        && data.themeId is string
+        && data.themeId.size() >= 1
+        && data.themeId.size() <= 64
+        && data.themeId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.themeName is string
+        && data.themeName.size() >= 1
+        && data.themeName.size() <= 60
+        && data.difficultyId is string
+        && data.difficultyId.size() >= 1
+        && data.difficultyId.size() <= 32
+        && data.difficultyId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.highScore is number
+        && data.highScore >= 0
+        && data.highScore <= 1000000
+        && data.bestTimeSec is number
+        && data.bestTimeSec >= 0
+        && data.bestTimeSec <= 86400
+        && (!('maxCombo' in data) || (data.maxCombo is number && data.maxCombo >= 1 && data.maxCombo <= 500))
+        && data.stars is int
+        && data.stars >= 1
+        && data.stars <= 3
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCustomTheme(data, userId) {
+      return data.keys().hasAll(['userId', 'name', 'icon', 'items', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'name', 'icon', 'items', 'createdAt', 'updatedAt'])
+        && data.userId is string
+        && isValidId(data.userId)
+        && data.userId == request.auth.uid
+        && data.userId == userId
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 40
+        && data.icon is string
+        && data.icon.size() >= 1
+        && data.icon.size() <= 12
+        && data.items is list
+        && data.items.size() >= 6
+        && data.items.size() <= 24
+        && data.items[0] is map
+        && data.items[0].keys().hasAll(['id', 'name', 'symbol', 'color'])
+        && data.items[0].keys().hasOnly(['id', 'name', 'symbol', 'color', 'spiritRefId'])
+        && data.items[0].id is string
+        && data.items[0].id.size() >= 1
+        && data.items[0].id.size() <= 64
+        && data.items[0].name is string
+        && data.items[0].name.size() >= 1
+        && data.items[0].name.size() <= 40
+        && data.items[0].symbol is string
+        && data.items[0].symbol.size() >= 1
+        && data.items[0].symbol.size() <= 16
+        && data.items[0].color is string
+        && data.items[0].color.size() >= 1
+        && data.items[0].color.size() <= 40
+        && (!('spiritRefId' in data.items[0]) || (data.items[0].spiritRefId is string && data.items[0].spiritRefId.size() <= 32))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCompatibilityLog(data, userId) {
+      return data.keys().hasAll(['userId', 'personAName', 'personAZodiac', 'personAMbti', 'personBName', 'personBZodiac', 'personBMbti', 'relationType', 'overallScore', 'verdict', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'personAName', 'personAZodiac', 'personAMbti', 'personBName', 'personBZodiac', 'personBMbti', 'relationType', 'overallScore', 'verdict', 'createdAt'])
+        && data.userId is string
+        && isValidId(data.userId)
+        && data.userId == request.auth.uid
+        && data.userId == userId
+        && data.personAName is string
+        && data.personAName.size() >= 1
+        && data.personAName.size() <= 40
+        && data.personAZodiac is string
+        && data.personAZodiac.size() >= 1
+        && data.personAZodiac.size() <= 16
+        && data.personAMbti is string
+        && data.personAMbti.size() == 4
+        && data.personAMbti.matches('^[EI][SN][TF][JP]$')
+        && data.personBName is string
+        && data.personBName.size() >= 1
+        && data.personBName.size() <= 40
+        && data.personBZodiac is string
+        && data.personBZodiac.size() >= 1
+        && data.personBZodiac.size() <= 16
+        && data.personBMbti is string
+        && data.personBMbti.size() == 4
+        && data.personBMbti.matches('^[EI][SN][TF][JP]$')
+        && data.relationType in ['love', 'friend', 'work', 'creative']
+        && data.overallScore is number
+        && data.overallScore >= 0
+        && data.overallScore <= 100
+        && data.verdict is string
+        && data.verdict.size() >= 1
+        && data.verdict.size() <= 60
+        && data.createdAt is timestamp;
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.keys().hasAll(['userId', 'displayName', 'gameMode', 'themeId', 'themeName', 'difficultyId', 'highScore', 'bestTimeSec', 'stars', 'isPublic', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'displayName', 'gameMode', 'themeId', 'themeName', 'difficultyId', 'highScore', 'bestTimeSec', 'stars', 'isPublic', 'createdAt', 'updatedAt'])
+        && data.userId is string
+        && isValidId(data.userId)
+        && data.userId == request.auth.uid
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 60
+        && data.gameMode in ['flip', 'link']
+        && data.themeId is string
+        && data.themeId.size() >= 1
+        && data.themeId.size() <= 64
+        && data.themeId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.themeName is string
+        && data.themeName.size() >= 1
+        && data.themeName.size() <= 60
+        && data.difficultyId is string
+        && data.difficultyId.size() >= 1
+        && data.difficultyId.size() <= 32
+        && data.difficultyId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.highScore is number
+        && data.highScore >= 0
+        && data.highScore <= 1000000
+        && data.bestTimeSec is number
+        && data.bestTimeSec >= 0
+        && data.bestTimeSec <= 86400
+        && data.stars is int
+        && data.stars >= 1
+        && data.stars <= 3
+        && data.isPublic is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // 4. Collection Match Blocks
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isVerifiedOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'favoriteMbti', 'updatedAt'])
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isVerifiedOwner(userId) && isValidId(userId);
+
+      match /scores/{scoreId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(scoreId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(scoreId)
+          && isValidUserScore(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(scoreId)
+          && isValidUserScore(incoming(), userId)
+          && incoming().diff(existing()).affectedKeys().hasOnly(['themeName', 'highScore', 'bestTimeSec', 'maxCombo', 'stars', 'updatedAt'])
+          && incoming().userId == existing().userId
+          && incoming().gameMode == existing().gameMode
+          && incoming().themeId == existing().themeId
+          && incoming().difficultyId == existing().difficultyId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(scoreId);
+      }
+
+      match /customThemes/{themeId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(themeId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(themeId)
+          && isValidCustomTheme(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(themeId)
+          && isValidCustomTheme(incoming(), userId)
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'icon', 'items', 'updatedAt'])
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(themeId);
+      }
+
+      match /compatibilityLogs/{logId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(logId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(logId)
+          && isValidCompatibilityLog(incoming(), userId)
+          && incoming().createdAt == request.time
+          && parentUserExists(userId);
+        allow update: if false;
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId);
+      }
+    }
+
+    match /leaderboard/{entryId} {
+      allow get: if isValidId(entryId)
+        && ((resource.data.isPublic == true && resource.data.highScore >= 0) || (isSignedIn() && resource.data.userId == request.auth.uid));
+      allow list: if resource.data.isPublic == true
+        && resource.data.highScore >= 0;
+      allow create: if isVerifiedUser()
+        && isValidId(entryId)
+        && isValidLeaderboardEntry(incoming())
+        && entryId == (request.auth.uid + '_' + incoming().gameMode + '_' + incoming().difficultyId + '_' + incoming().themeId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(entryId)
+        && isValidLeaderboardEntry(incoming())
+        && existing().userId == request.auth.uid
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'themeName', 'highScore', 'bestTimeSec', 'stars', 'isPublic', 'updatedAt'])
+        && incoming().userId == existing().userId
+        && incoming().gameMode == existing().gameMode
+        && incoming().themeId == existing().themeId
+        && incoming().difficultyId == existing().difficultyId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isVerifiedUser()
+        && isValidId(entryId)
+        && existing().userId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,25 @@
+# PairMaster Firestore Security Specification
+
+## 1. Data Invariants (Master Source of Truth)
+1. **Default-Deny Catch-All**: Every path not explicitly matched under `/databases/{database}/documents` is denied (`allow read, write: if false`).
+2. **Verified Identity Required for Writes**: Every write operation requires an authenticated user with `request.auth.token.email_verified == true`.
+3. **Strict Path & ID Guard**: Single-document operations (`get`, `create`, `update`, `delete`) validate document IDs with `isValidId(id)` (`^[a-zA-Z0-9_\\-]+$`, length `1..128`). List operations never run `isValidId()`.
+4. **PII Isolation**: User emails, addresses, and private credentials are never stored in `/users/{userId}` or `/leaderboard/{entryId}`. `/users/{userId}` and its subcollections (`/scores`, `/customThemes`, `/compatibilityLogs`) are readable and writable **only** by `isOwner(userId)` (`request.auth.uid == userId`).
+5. **Master Gate Parent Existence**: All subcollections under `/users/{userId}` (`scores`, `customThemes`, `compatibilityLogs`) verify `exists(/databases/$(database)/documents/users/$(userId))` on create/update (unless created atomically in a batch using `existsAfter`, so the client ensures the parent `/users/{userId}` document exists first or uses `existsAfter`). Let's ensure the client creates `/users/{userId}` before subcollection writes AND rules check `exists(/databases/$(database)/documents/users/$(userId))`.
+6. **Public Leaderboard Integrity**: `/leaderboard/{entryId}` allows `get` and `list` ONLY when `resource.data.isPublic == true && resource.data.highScore >= 0` (explicitly evaluated on `resource.data`, zero `get()`/`exists()` inside `allow list`). Writes to `/leaderboard/{entryId}` require `isVerifiedUser()`, `incoming().userId == request.auth.uid`, and `entryId.matches('^' + request.auth.uid + '_[a-zA-Z0-9_\\-]+$')` (so a user can ONLY create/update/delete their own scoped leaderboard document IDs and never overwrite another user's entry).
+7. **Temporal & Ownership Immutability**: `createdAt == request.time` on `create`; `updatedAt == request.time` on both `create` and `update`; `createdAt`, `uid`/`userId` are immutable on `update`.
+8. **Strict Key & Type Blueprints**: Every `create` verifies `keys().hasAll(...) && keys().hasOnly(...)`; every `update` calls `isValid[Entity](incoming())` first AND restricts changed keys via `incoming().diff(existing()).affectedKeys().hasOnly([...])`.
+
+## 2. The "Dirty Dozen" Attack Payloads (All Expected: PERMISSION_DENIED)
+1. **Shadow Field Injection on Profile**: Create `/users/{uid}` with `{ uid, displayName: "Mochi", isAdmin: true, createdAt: serverTime, updatedAt: serverTime }` -> Rejected by `keys().hasOnly(['uid', 'displayName', 'photoURL', 'favoriteMbti', 'createdAt', 'updatedAt'])`.
+2. **Identity Spoofing on Score**: User A writes `/users/{userA}/scores/s1` with `userId: "{userB}"` -> Rejected by `data.userId == request.auth.uid`.
+3. **Unverified Email Write**: Authenticated user with `email_verified: false` tries to create `/leaderboard/{uid}_flip_easy_candy` -> Rejected by `request.auth.token.email_verified == true`.
+4. **Cross-User Subcollection Read**: User B attempts `get` or `list` on `/users/{userA}/compatibilityLogs` -> Rejected by `isOwner(userId)`.
+5. **Leaderboard Entry Hijack**: User B attempts to `update` `/leaderboard/{userA}_flip_easy_candy` -> Rejected by `existing().userId == request.auth.uid` and doc ID prefix check.
+6. **Leaderboard Private Scraping**: Attacker queries `/leaderboard` without filtering `where('isPublic', '==', true)` when a document has `isPublic: false` -> Rejected by `allow list: if resource.data.isPublic == true && resource.data.highScore >= 0`.
+7. **Timestamp Forgery**: Client submits `/users/{uid}` with `createdAt: "2020-01-01T00:00:00Z"` or client `Date` -> Rejected by `data.createdAt == request.time && data.updatedAt == request.time`.
+8. **Immutable Field Mutation**: Client updates `/users/{uid}/scores/s1` changing `createdAt` or `gameMode` -> Rejected by `affectedKeys().hasOnly(...)` and `incoming().createdAt == existing().createdAt`.
+9. **ID Poisoning (1.5KB Document ID)**: Client creates `/users/{uid}/scores/{1500_char_junk}` -> Rejected by `isValidId(scoreId)`.
+10. **Array Exhaustion ("Denial of Wallet")**: Client creates `/users/{uid}/customThemes/t1` with `items` containing 500 objects or an invalid first element (`items: ["bad"]`) -> Rejected by `data.items is list && data.items.size() >= 6 && data.items.size() <= 24 && data.items[0] is map`.
+11. **Value Poisoning on Leaderboard**: Client updates `/leaderboard/{uid}_flip_easy_candy` with `highScore: "999999999"` (string) or `highScore: -50` or `stars: 99` -> Rejected by `isValidLeaderboardEntry(incoming())` (`highScore is number && highScore >= 0 && highScore <= 1000000`, `stars is int && stars >= 0 && stars <= 3`).
+12. **Blanket Unprotected Collection Probe**: Client writes to `/admins/{uid}` or `/feedback/f1` -> Rejected by `match /{document=**} { allow read, write: if false; }`.

@@ -1,0 +1,308 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public-safe user profile and preferences for PairMaster players.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the user."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Display nickname of the player."
+        },
+        "photoURL": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500,
+          "description": "Avatar photo URL."
+        },
+        "favoriteMbti": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 4,
+          "pattern": "^[EI][SN][TF][JP]$",
+          "description": "Player's chosen MBTI personality code."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["uid", "displayName", "createdAt", "updatedAt"]
+    },
+    "UserScore": {
+      "title": "UserScore",
+      "description": "Personal best record per game mode, difficulty, and theme.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "gameMode": {
+          "type": "string",
+          "enum": ["flip", "link"]
+        },
+        "themeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "themeName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "difficultyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "highScore": {
+          "type": "number"
+        },
+        "bestTimeSec": {
+          "type": "number"
+        },
+        "maxCombo": {
+          "type": "number"
+        },
+        "stars": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "gameMode", "themeId", "themeName", "difficultyId", "highScore", "bestTimeSec", "stars", "createdAt", "updatedAt"]
+    },
+    "CustomTheme": {
+      "title": "CustomTheme",
+      "description": "Player-created custom character deck saved to cloud.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "icon": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12
+        },
+        "items": {
+          "type": "array",
+          "description": "Between 6 and 24 custom match deck items."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "name", "icon", "items", "createdAt", "updatedAt"]
+    },
+    "CompatibilityLog": {
+      "title": "CompatibilityLog",
+      "description": "Saved astrology & MBTI compatibility report for a pair.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "personAName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "personAZodiac": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "personAMbti": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 4,
+          "pattern": "^[EI][SN][TF][JP]$"
+        },
+        "personBName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "personBZodiac": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "personBMbti": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 4,
+          "pattern": "^[EI][SN][TF][JP]$"
+        },
+        "relationType": {
+          "type": "string",
+          "enum": ["love", "friend", "work", "creative"]
+        },
+        "overallScore": {
+          "type": "number"
+        },
+        "verdict": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "userId",
+        "personAName",
+        "personAZodiac",
+        "personAMbti",
+        "personBName",
+        "personBZodiac",
+        "personBMbti",
+        "relationType",
+        "overallScore",
+        "verdict",
+        "createdAt"
+      ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public high-score Hall of Fame entry without PII.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "gameMode": {
+          "type": "string",
+          "enum": ["flip", "link"]
+        },
+        "themeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "themeName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "difficultyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "highScore": {
+          "type": "number"
+        },
+        "bestTimeSec": {
+          "type": "number"
+        },
+        "stars": {
+          "type": "number"
+        },
+        "isPublic": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "gameMode",
+        "themeId",
+        "themeName",
+        "difficultyId",
+        "highScore",
+        "bestTimeSec",
+        "stars",
+        "isPublic",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Stores each player's profile and MBTI preference."
+    },
+    "/users/{userId}/scores/{scoreId}": {
+      "schema": { "$ref": "#/entities/UserScore" },
+      "description": "Stores each player's personal best scores per mode/theme/difficulty."
+    },
+    "/users/{userId}/customThemes/{themeId}": {
+      "schema": { "$ref": "#/entities/CustomTheme" },
+      "description": "Stores custom doll/spirit card decks built by the player."
+    },
+    "/users/{userId}/compatibilityLogs/{logId}": {
+      "schema": { "$ref": "#/entities/CompatibilityLog" },
+      "description": "Stores saved astrology & MBTI compatibility test results."
+    },
+    "/leaderboard/{entryId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Public high-score Hall of Fame across players (no PII)."
+    }
+  }
+}

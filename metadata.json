@@ -1,0 +1,6 @@
+{
+  "name": "PairMaster · 奇蹟配對王國",
+  "description": "精緻多模式配對平台：經典翻牌記憶配對、智慧連連看消除、靈魂契合度星盤測算與心動卡牌互動體驗。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
