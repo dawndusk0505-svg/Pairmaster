@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Volume2, VolumeX, Sparkles, QrCode, Trophy, LogIn, LogOut, ShieldCheck } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 import { useFirebase } from '../contexts/FirebaseContext';
@@ -34,6 +34,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     signInWithGoogle,
     signOutUser,
   } = useFirebase();
+
+  useEffect(() => {
+    return soundFx.subscribe(setIsMuted);
+  }, []);
 
   const pendingCount = isSuperAdmin ? pendingNoticeRequests.length : 0;
 
@@ -152,12 +156,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={handleToggleSound}
             title={isMuted ? '開啟遊戲音效' : '靜音'}
             aria-label={isMuted ? '開啟音效' : '靜音'}
-            className="p-1.5 sm:p-2 text-slate-500 hover:text-pink-600 hover:bg-pink-50 rounded-xl transition-colors cursor-pointer"
+            className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold ${
+              isMuted
+                ? 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100'
+                : 'text-slate-600 hover:text-pink-600 hover:bg-pink-50'
+            }`}
           >
             {isMuted ? (
-              <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
+              <>
+                <VolumeX className="w-4 h-4 text-rose-500" />
+                <span className="hidden md:inline">已靜音</span>
+              </>
             ) : (
-              <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-pink-500" />
+              <>
+                <Volume2 className="w-4 h-4 text-pink-500" />
+                <span className="hidden xl:inline">音效</span>
+              </>
             )}
           </button>
 

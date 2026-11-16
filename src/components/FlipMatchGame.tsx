@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { RotateCcw, Eye, Zap, Shuffle, Trophy, Clock, Flame, Palette, Cloud } from 'lucide-react';
+import { RotateCcw, Eye, Zap, Shuffle, Trophy, Clock, Flame, Palette, Cloud, Volume2, VolumeX } from 'lucide-react';
 import { MATCH_THEMES, DIFFICULTY_PRESETS, DifficultyConfig, MatchTheme } from '../data/matchThemes';
 import { CustomThemeModal } from './CustomThemeModal';
 import { soundFx } from '../utils/audio';
@@ -69,7 +69,12 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
   const [isNewRecord, setIsNewRecord] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'cloud' | 'anonymous' | 'local' | null>(null);
   const [floatingEmojis, setFloatingEmojis] = useState<FloatingMatchEmoji[]>([]);
+  const [isMuted, setIsMuted] = useState(() => soundFx.getIsMuted());
   const { getCloudHighScore, getPublicStageBest, saveGameScore } = useFirebase();
+
+  useEffect(() => {
+    return soundFx.subscribe(setIsMuted);
+  }, []);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -284,12 +289,15 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
       setIsGameActive(true);
     }
 
-    soundFx.playCardFlip();
-
     const newFlipped = [...flippedIndicesRef.current, index];
     flippedIndicesRef.current = newFlipped;
     setFlippedIndices(newFlipped);
     setCards((prev) => prev.map((c, i) => (i === index ? { ...c, isFlipped: true } : c)));
+
+    if (newFlipped.length === 1) {
+      soundFx.playCardFlip();
+      return;
+    }
 
     if (newFlipped.length === 2) {
       setIsResolving(true);
@@ -650,10 +658,35 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {!isGameActive && !isVictory && moves === 0 && (
               <span className="text-[11px] text-pink-500 font-bold">點擊任意卡片開始計時 ✨</span>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                const muted = soundFx.toggleMute();
+                if (!muted) soundFx.playClick();
+              }}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 ${
+                isMuted
+                  ? 'text-rose-700 bg-rose-50 hover:bg-rose-100 border-rose-300'
+                  : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
+              }`}
+              title={isMuted ? '目前為靜音狀態，點擊開啟遊戲音效' : '遊戲音效開啟中，點擊可靜音'}
+            >
+              {isMuted ? (
+                <>
+                  <VolumeX className="w-3.5 h-3.5 text-rose-500" />
+                  <span>已靜音 · 點此開聲</span>
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>音效開</span>
+                </>
+              )}
+            </button>
             <button
               type="button"
               onClick={() => {
