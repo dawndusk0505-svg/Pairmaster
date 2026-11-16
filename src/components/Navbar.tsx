@@ -93,7 +93,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="p-1.5 sm:px-2.5 sm:py-1.5 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
             >
               <Trophy className="w-4 h-4 text-amber-500" />
-              <span className="hidden xl:inline">排行榜</span>
+              <span className="hidden md:inline">戰績榜</span>
             </button>
           )}
 

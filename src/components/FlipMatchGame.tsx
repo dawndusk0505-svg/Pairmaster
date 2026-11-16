@@ -20,11 +20,13 @@ interface CardItem {
 interface FlipMatchGameProps {
   customTheme?: MatchTheme | null;
   onUpdateCustomTheme?: (theme: MatchTheme) => void;
+  onOpenMyRecords?: () => void;
 }
 
 export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
   customTheme = null,
   onUpdateCustomTheme,
+  onOpenMyRecords,
 }) => {
   const [selectedTheme, setSelectedTheme] = useState<MatchTheme>(MATCH_THEMES[0]);
   const [difficulty, setDifficulty] = useState<DifficultyConfig>(DIFFICULTY_PRESETS[1]); // Default 4x4 (16 cards)
@@ -50,6 +52,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
 
   // High score
   const [highScore, setHighScore] = useState(0);
+  const [isNewRecord, setIsNewRecord] = useState(false);
   const { user, getCloudHighScore, saveGameScore } = useFirebase();
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -64,6 +67,8 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
   const availableThemes = customTheme ? [...MATCH_THEMES, customTheme] : MATCH_THEMES;
   const cloudHigh = getCloudHighScore('flip', difficulty.id, selectedTheme.id);
   const displayedHighScore = Math.max(highScore, cloudHigh);
+  const displayedHighScoreRef = useRef(displayedHighScore);
+  displayedHighScoreRef.current = displayedHighScore;
 
   const clearAllTimeouts = useCallback(() => {
     timeoutsRef.current.forEach(clearTimeout);
@@ -140,6 +145,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
     setSecondsElapsed(0);
     setIsGameActive(false);
     setIsVictory(false);
+    setIsNewRecord(false);
     setIsPeeking(false);
     setIsResolving(false);
     setFreezeSeconds(0);
@@ -209,6 +215,9 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
       } catch {
         // ignore
       }
+
+      const prevBest = displayedHighScoreRef.current;
+      setIsNewRecord(finalScore > 0 && finalScore > prevBest);
 
       const key = `pairmaster_high_${difficulty.id}_${selectedTheme.id}`;
       setHighScore((prevHigh) => {
@@ -511,6 +520,35 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
           </div>
         </div>
 
+        {/* Personal Best Strip (Visible above board) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-amber-50/90 via-pink-50/80 to-rose-50/70 border border-amber-200/80 text-xs">
+          <div className="flex items-center gap-2 font-bold text-slate-700">
+            <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
+            <span>本關最高紀錄：</span>
+            <span className="font-mono font-black text-rose-600 text-sm tabular-nums">
+              {displayedHighScore > 0 ? `${displayedHighScore} 分` : '尚無紀錄'}
+            </span>
+            {cloudHigh > 0 && (
+              <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-pink-500">
+                <Cloud className="w-3 h-3" />
+                <span>雲端同步</span>
+              </span>
+            )}
+          </div>
+          {onOpenMyRecords && (
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                onOpenMyRecords();
+              }}
+              className="text-xs font-black text-pink-600 hover:text-pink-700 underline underline-offset-2 cursor-pointer"
+            >
+              查看我的全部最高紀錄 →
+            </button>
+          )}
+        </div>
+
         {/* Row 3: Power-ups Toolbar & Restart */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -790,10 +828,20 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
               </div>
             </div>
 
-            <div className="bg-gradient-to-r from-pink-400 to-rose-400 rounded-2xl p-3 text-white shadow-md shadow-pink-200">
-              <span className="text-xs font-bold block opacity-90">終局積分</span>
-              <span className="text-3xl font-black font-mono tabular-nums">
+            <div className="bg-gradient-to-r from-pink-400 to-rose-400 rounded-2xl p-3 text-white shadow-md shadow-pink-200 space-y-1">
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-xs font-bold opacity-90">終局積分</span>
+                {isNewRecord && (
+                  <span className="text-[11px] font-black bg-amber-300 text-rose-900 px-2 py-0.5 rounded-lg">
+                    ✨ 新最高紀錄！
+                  </span>
+                )}
+              </div>
+              <span className="text-3xl font-black font-mono tabular-nums block">
                 {score}
+              </span>
+              <span className="text-[11px] font-bold opacity-90 block">
+                個人最高紀錄：{Math.max(displayedHighScore, score)} 分
               </span>
             </div>
 

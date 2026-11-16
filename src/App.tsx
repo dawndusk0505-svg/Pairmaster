@@ -31,7 +31,13 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('flip');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+  const [leaderboardTab, setLeaderboardTab] = useState<'global' | 'mine'>('global');
   const [localCustomTheme, setLocalCustomTheme] = useState<MatchTheme | null>(loadSavedCustomTheme);
+
+  const openLeaderboard = (tab: 'global' | 'mine' = 'global') => {
+    setLeaderboardTab(tab);
+    setIsLeaderboardOpen(true);
+  };
 
   const effectiveCustomTheme = cloudCustomTheme || localCustomTheme;
 
@@ -58,7 +64,7 @@ function AppContent() {
         onSelectTab={(tab) => handleSelectAndScroll(tab, false)}
         onQuickAction={() => handleSelectAndScroll('flip', true)}
         onOpenShare={() => setIsShareModalOpen(true)}
-        onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
+        onOpenLeaderboard={() => openLeaderboard('global')}
       />
 
       {/* Cloud Error / Quota Notice Banner */}
@@ -90,6 +96,7 @@ function AppContent() {
       <LeaderboardModal
         isOpen={isLeaderboardOpen}
         onClose={() => setIsLeaderboardOpen(false)}
+        initialTab={leaderboardTab}
       />
 
       {/* Main Content Area */}
@@ -230,12 +237,14 @@ function AppContent() {
             <FlipMatchGame
               customTheme={effectiveCustomTheme}
               onUpdateCustomTheme={handleUpdateCustomTheme}
+              onOpenMyRecords={() => openLeaderboard('mine')}
             />
           )}
           {activeTab === 'link' && (
             <LinkMatchGame
               customTheme={effectiveCustomTheme}
               onUpdateCustomTheme={handleUpdateCustomTheme}
+              onOpenMyRecords={() => openLeaderboard('mine')}
             />
           )}
           {activeTab === 'chemistry' && <CompatibilityMatcher />}

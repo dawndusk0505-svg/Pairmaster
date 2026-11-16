@@ -1,13 +1,28 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { X, Trophy, Crown, Clock, Cloud, Sparkles, LogIn } from 'lucide-react';
+import { X, Trophy, Crown, Clock, Cloud, Sparkles, LogIn, Medal, Smartphone } from 'lucide-react';
 import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { CloudLeaderboardEntry, useFirebase } from '../contexts/FirebaseContext';
+import { MATCH_THEMES } from '../data/matchThemes';
 import { soundFx } from '../utils/audio';
 
 interface LeaderboardModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: 'global' | 'mine';
+}
+
+interface PersonalBestRecord {
+  id: string;
+  gameMode: 'flip' | 'link';
+  themeId: string;
+  themeName: string;
+  difficultyId: string;
+  highScore: number;
+  bestTimeSec?: number;
+  maxCombo?: number;
+  stars?: number;
+  isCloudSynced: boolean;
 }
 
 const DIFFICULTY_LABELS: Record<string, string> = {
@@ -19,11 +34,76 @@ const DIFFICULTY_LABELS: Record<string, string> = {
   standard: '標準 8×6',
 };
 
-export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onClose }) => {
+const THEME_NAME_MAP = new Map<string, string>([
+  ...MATCH_THEMES.map((t): [string, string] => [t.id, t.name]),
+  ['custom-theme', '自訂糖果隊'],
+]);
+
+function readLocalPersonalRecords(): PersonalBestRecord[] {
+  const results: PersonalBestRecord[] = [];
+  if (typeof window === 'undefined') return results;
+
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+
+      let gameMode: 'flip' | 'link' | null = null;
+      let rest = '';
+
+      if (key.startsWith('pairmaster_link_high_')) {
+        gameMode = 'link';
+        rest = key.slice('pairmaster_link_high_'.length);
+      } else if (key.startsWith('pairmaster_high_')) {
+        gameMode = 'flip';
+        rest = key.slice('pairmaster_high_'.length);
+      }
+
+      if (!gameMode || !rest) continue;
+
+      const sepIdx = rest.indexOf('_');
+      if (sepIdx <= 0) continue;
+
+      const difficultyId = rest.slice(0, sepIdx);
+      const themeId = rest.slice(sepIdx + 1);
+      const rawScore = localStorage.getItem(key);
+      const score = rawScore ? parseInt(rawScore, 10) : 0;
+
+      if (!Number.isFinite(score) || score <= 0) continue;
+
+      results.push({
+        id: `${gameMode}_${difficultyId}_${themeId}`,
+        gameMode,
+        themeId,
+        themeName: THEME_NAME_MAP.get(themeId) || themeId,
+        difficultyId,
+        highScore: score,
+        isCloudSynced: false,
+      });
+    }
+  } catch {
+    // ignore localStorage access errors
+  }
+
+  return results;
+}
+
+export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
+  isOpen,
+  onClose,
+  initialTab = 'global',
+}) => {
   const { user, signInWithGoogle, isAuthBusy, scoresMap } = useFirebase();
+  const [activeTab, setActiveTab] = useState<'global' | 'mine'>(initialTab);
   const [entries, setEntries] = useState<CloudLeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filterMode, setFilterMode] = useState<'all' | 'flip' | 'link'>('all');
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -67,6 +147,39 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
     return () => unsub();
   }, [isOpen]);
 
+  const personalRecords = useMemo(() => {
+    if (!isOpen) return [];
+    const merged = new Map<string, PersonalBestRecord>();
+
+    // 1. Seed from localStorage high scores
+    for (const localRec of readLocalPersonalRecords()) {
+      merged.set(localRec.id, localRec);
+    }
+
+    // 2. Merge with cloud scoresMap (takes higher score & enriches with time/stars/combo)
+    for (const cloudRec of Object.values(scoresMap)) {
+      const id = `${cloudRec.gameMode}_${cloudRec.difficultyId}_${cloudRec.themeId}`;
+      const existing = merged.get(id);
+      const bestScore = Math.max(existing?.highScore ?? 0, cloudRec.highScore);
+      merged.set(id, {
+        id,
+        gameMode: cloudRec.gameMode,
+        themeId: cloudRec.themeId,
+        themeName: cloudRec.themeName || THEME_NAME_MAP.get(cloudRec.themeId) || cloudRec.themeId,
+        difficultyId: cloudRec.difficultyId,
+        highScore: bestScore,
+        bestTimeSec: cloudRec.bestTimeSec,
+        maxCombo: cloudRec.maxCombo,
+        stars: cloudRec.stars,
+        isCloudSynced: true,
+      });
+    }
+
+    return Array.from(merged.values())
+      .filter((r) => (filterMode === 'all' ? true : r.gameMode === filterMode))
+      .sort((a, b) => b.highScore - a.highScore);
+  }, [isOpen, scoresMap, filterMode]);
+
   const filteredEntries = useMemo(() => {
     return entries
       .filter((e) => (filterMode === 'all' ? true : e.gameMode === filterMode))
@@ -77,7 +190,14 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
       .slice(0, 20);
   }, [entries, filterMode]);
 
-  const myBestCount = Object.keys(scoresMap).length;
+  const allPersonalCount = useMemo(() => {
+    if (!isOpen) return Object.keys(scoresMap).length;
+    const keys = new Set<string>([
+      ...readLocalPersonalRecords().map((r) => r.id),
+      ...Object.values(scoresMap).map((c) => `${c.gameMode}_${c.difficultyId}_${c.themeId}`),
+    ]);
+    return keys.size;
+  }, [isOpen, scoresMap]);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -89,7 +209,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
 
   return (
     <div className="fixed inset-0 z-50 bg-pink-950/45 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white border-2 border-pink-300 rounded-3xl p-5 sm:p-7 max-w-xl w-full shadow-2xl space-y-5 max-h-[88vh] flex flex-col">
+      <div className="bg-white border-2 border-pink-300 rounded-3xl p-5 sm:p-7 max-w-xl w-full shadow-2xl space-y-4 max-h-[88vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-pink-100 pb-3 shrink-0">
           <div className="flex items-center gap-2.5">
@@ -98,11 +218,11 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
             </span>
             <div>
               <h2 className="text-lg font-black text-slate-900 flex items-center gap-1.5">
-                <span>雲端榮譽榜</span>
+                <span>戰績與最高紀錄榜</span>
                 <Cloud className="w-4 h-4 text-pink-500" />
               </h2>
               <p className="text-xs text-pink-500 font-bold">
-                Firestore 即時同步全服高分紀錄
+                隨時查看個人歷史最高分與全服高手榜
               </p>
             </div>
           </div>
@@ -120,8 +240,42 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
           </button>
         </div>
 
+        {/* Primary View Tabs: Global vs Personal Best */}
+        <div className="grid grid-cols-2 gap-2 p-1 bg-pink-100/70 rounded-2xl border border-pink-200 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playClick();
+              setActiveTab('mine');
+            }}
+            className={`py-2 px-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'mine'
+                ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-sm'
+                : 'text-slate-600 hover:text-pink-600'
+            }`}
+          >
+            <Medal className="w-3.5 h-3.5" />
+            <span>我的最高紀錄 ({allPersonalCount})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playClick();
+              setActiveTab('global');
+            }}
+            className={`py-2 px-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'global'
+                ? 'bg-gradient-to-r from-amber-400 to-pink-500 text-white shadow-sm'
+                : 'text-slate-600 hover:text-pink-600'
+            }`}
+          >
+            <Crown className="w-3.5 h-3.5" />
+            <span>全服榮譽榜</span>
+          </button>
+        </div>
+
         {/* Auth / Personal Summary Strip */}
-        <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
           {user ? (
             <div className="flex items-center gap-2.5">
               {user.photoURL ? (
@@ -141,14 +295,14 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
                   {user.displayName || '糖果玩家'}
                 </p>
                 <p className="text-[11px] font-bold text-pink-600">
-                  已雲端保存 {myBestCount} 項關卡最佳紀錄
+                  已累積 {allPersonalCount} 項關卡最高紀錄（雲端已保存 {Object.keys(scoresMap).length} 項）
                 </p>
               </div>
             </div>
           ) : (
             <div className="flex items-center justify-between w-full gap-3">
               <div className="text-xs text-slate-700 font-bold">
-                登入 Google 帳號即可把你的高分與自訂公仔同步到雲端！
+                登入 Google 帳號即可把你的最高分同步到雲端並登上全服榜！
               </div>
               <button
                 type="button"
@@ -193,9 +347,93 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
           ))}
         </div>
 
-        {/* Leaderboard List */}
+        {/* Tab Content */}
         <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[220px]">
-          {isLoading ? (
+          {activeTab === 'mine' ? (
+            personalRecords.length === 0 ? (
+              <div className="py-12 text-center space-y-2">
+                <Medal className="w-8 h-8 text-pink-300 mx-auto" />
+                <p className="text-sm font-black text-slate-700">暫時未有個人通關紀錄</p>
+                <p className="text-xs text-slate-500 font-medium">
+                  完成任何一局「翻牌記憶」或「連連看」，你嘅最高分就會即刻顯示喺呢度！
+                </p>
+              </div>
+            ) : (
+              personalRecords.map((rec, idx) => (
+                <div
+                  key={rec.id}
+                  className="p-3 rounded-2xl border bg-pink-50/45 border-pink-200 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                        idx === 0
+                          ? 'bg-gradient-to-tr from-amber-400 to-rose-400 text-white shadow-xs'
+                          : 'bg-white border border-pink-200 text-pink-600'
+                      }`}
+                    >
+                      {idx === 0 ? <Trophy className="w-4 h-4" /> : idx + 1}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-black text-slate-800 truncate">
+                          {rec.themeName}
+                        </span>
+                        <span className="text-[10px] font-bold text-pink-600 bg-white border border-pink-200 px-1.5 py-0.5 rounded-md">
+                          {rec.gameMode === 'flip' ? '翻牌記憶' : '連連看'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 truncate mt-0.5">
+                        <span>{DIFFICULTY_LABELS[rec.difficultyId] || rec.difficultyId}</span>
+                        {rec.maxCombo && rec.maxCombo > 1 && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>最高連擊 x{rec.maxCombo}</span>
+                          </>
+                        )}
+                        <span aria-hidden="true">·</span>
+                        <span className="inline-flex items-center gap-0.5 text-pink-500">
+                          {rec.isCloudSynced ? (
+                            <>
+                              <Cloud className="w-2.5 h-2.5" />
+                              <span>雲端</span>
+                            </>
+                          ) : (
+                            <>
+                              <Smartphone className="w-2.5 h-2.5" />
+                              <span>本機</span>
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <div className="text-base font-black font-mono text-rose-600 tabular-nums">
+                      {rec.highScore}
+                    </div>
+                    {(rec.stars || rec.bestTimeSec !== undefined) && (
+                      <div className="text-[10px] font-bold text-slate-500 flex items-center justify-end gap-1.5">
+                        {rec.stars && (
+                          <span className="text-amber-400">
+                            {'★'.repeat(Math.min(3, Math.max(1, rec.stars)))}
+                          </span>
+                        )}
+                        {rec.bestTimeSec !== undefined && (
+                          <span className="flex items-center gap-0.5 font-mono tabular-nums">
+                            <Clock className="w-2.5 h-2.5" />
+                            {formatTime(rec.bestTimeSec)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )
+          ) : isLoading ? (
             <div className="py-12 text-center text-xs font-bold text-pink-500">
               正在讀取雲端榮譽榜...
             </div>

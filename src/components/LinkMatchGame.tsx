@@ -57,11 +57,13 @@ function shuffleGridValues(g: Grid, innerRows: number, innerCols: number): Grid 
 interface LinkMatchGameProps {
   customTheme?: MatchTheme | null;
   onUpdateCustomTheme?: (theme: MatchTheme) => void;
+  onOpenMyRecords?: () => void;
 }
 
 export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   customTheme = null,
   onUpdateCustomTheme,
+  onOpenMyRecords,
 }) => {
   const [selectedTheme, setSelectedTheme] = useState<MatchTheme>(MATCH_THEMES[0]);
   const [difficulty, setDifficulty] = useState<LinkDifficulty>(LINK_DIFFICULTIES[1]);
@@ -81,6 +83,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   const [hintCount, setHintCount] = useState(3);
   const [shuffleCount, setShuffleCount] = useState(3);
   const [highScore, setHighScore] = useState(0);
+  const [isNewRecord, setIsNewRecord] = useState(false);
   const { user, getCloudHighScore, saveGameScore } = useFirebase();
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -97,6 +100,8 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   const availableThemes = customTheme ? [...MATCH_THEMES, customTheme] : MATCH_THEMES;
   const cloudHigh = getCloudHighScore('link', difficulty.id, selectedTheme.id);
   const displayedHighScore = Math.max(highScore, cloudHigh);
+  const displayedHighScoreRef = useRef(displayedHighScore);
+  displayedHighScoreRef.current = displayedHighScore;
 
   const clearAllTimeouts = useCallback(() => {
     timeoutsRef.current.forEach(clearTimeout);
@@ -167,6 +172,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
     setIsGameActive(false);
     setIsResolving(false);
     setIsVictory(false);
+    setIsNewRecord(false);
     setRemainingTiles(totalCells);
     setHintCount(3);
     setShuffleCount(3);
@@ -212,6 +218,9 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
       } catch {
         // ignore
       }
+
+      const prevBest = displayedHighScoreRef.current;
+      setIsNewRecord(finalScore > 0 && finalScore > prevBest);
 
       const key = `pairmaster_link_high_${difficulty.id}_${selectedTheme.id}`;
       setHighScore((prevHigh) => {
@@ -490,6 +499,35 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
           </div>
         </div>
 
+        {/* Personal Best Strip (Visible above board) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-amber-50/90 via-pink-50/80 to-rose-50/70 border border-amber-200/80 text-xs">
+          <div className="flex items-center gap-2 font-bold text-slate-700">
+            <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
+            <span>本關最高紀錄：</span>
+            <span className="font-mono font-black text-rose-600 text-sm tabular-nums">
+              {displayedHighScore > 0 ? `${displayedHighScore} 分` : '尚無紀錄'}
+            </span>
+            {cloudHigh > 0 && (
+              <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-pink-500">
+                <Cloud className="w-3 h-3" />
+                <span>雲端同步</span>
+              </span>
+            )}
+          </div>
+          {onOpenMyRecords && (
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                onOpenMyRecords();
+              }}
+              className="text-xs font-black text-pink-600 hover:text-pink-700 underline underline-offset-2 cursor-pointer"
+            >
+              查看我的全部最高紀錄 →
+            </button>
+          )}
+        </div>
+
         {/* Action Tools */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="flex items-center gap-2">
@@ -706,9 +744,19 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
                 </span>
               </div>
               <div>
-                <span className="text-xs text-pink-500 font-bold block">最終得分</span>
-                <span className="text-lg font-black font-mono text-rose-500 tabular-nums">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-pink-500 font-bold">最終得分</span>
+                  {isNewRecord && (
+                    <span className="text-[10px] font-black bg-amber-300 text-rose-900 px-1.5 py-0.5 rounded-md">
+                      新紀錄！
+                    </span>
+                  )}
+                </div>
+                <span className="text-lg font-black font-mono text-rose-500 tabular-nums block">
                   {score} 分
+                </span>
+                <span className="text-[11px] font-bold text-slate-500">
+                  個人最高：{Math.max(displayedHighScore, score)} 分
                 </span>
               </div>
             </div>
