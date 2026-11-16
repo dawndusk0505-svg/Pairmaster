@@ -21,7 +21,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenLeaderboard,
 }) => {
   const [isMuted, setIsMuted] = useState(soundFx.getIsMuted());
-  const { user, authReady, isAuthBusy, signInWithGoogle, signOutUser } = useFirebase();
+  const { isVerifiedGoogleUser, user, authReady, isAuthBusy, signInWithGoogle, signOutUser } = useFirebase();
 
   const handleToggleSound = () => {
     const muted = soundFx.toggleMute();
@@ -128,7 +128,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {authReady && (
-            user ? (
+            isVerifiedGoogleUser && user ? (
               <div className="flex items-center gap-1 bg-pink-50/90 border border-pink-200 rounded-xl pl-1.5 pr-1 py-1">
                 {user.photoURL ? (
                   <img

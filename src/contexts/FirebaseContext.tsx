@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import {
   User,
   onAuthStateChanged,
+  signInAnonymously,
   signInWithPopup,
   signOut,
 } from 'firebase/auth';
@@ -100,6 +101,7 @@ interface SaveGameScoreInput {
 
 interface FirebaseContextValue {
   user: User | null;
+  isVerifiedGoogleUser: boolean;
   authReady: boolean;
   isAuthBusy: boolean;
   cloudError: string | null;
@@ -108,7 +110,7 @@ interface FirebaseContextValue {
   signOutUser: () => Promise<void>;
   scoresMap: Record<string, CloudUserScore>;
   getCloudHighScore: (gameMode: 'flip' | 'link', difficultyId: string, themeId: string) => number;
-  saveGameScore: (input: SaveGameScoreInput) => Promise<void>;
+  saveGameScore: (input: SaveGameScoreInput) => Promise<'cloud' | 'anonymous' | 'local'>;
   cloudCustomTheme: MatchTheme | null;
   saveCustomTheme: (theme: MatchTheme) => Promise<void>;
   compatibilityLogs: CloudCompatibilityLog[];
@@ -211,7 +213,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   const ensureUserProfile = useCallback(async (currentUser: User) => {
-    if (!currentUser.emailVerified) return;
+    if (currentUser.isAnonymous || !currentUser.emailVerified) return;
     if (profileEnsuredUidRef.current === currentUser.uid) return;
     if (inFlightProfileRef.current?.uid === currentUser.uid) {
       return inFlightProfileRef.current.promise;
@@ -265,13 +267,13 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthReady(true);
-      if (!currentUser) {
+      if (!currentUser || currentUser.isAnonymous || !currentUser.emailVerified) {
         profileEnsuredUidRef.current = null;
         inFlightProfileRef.current = null;
         setScoresMap({});
         setCloudCustomTheme(null);
         setCompatibilityLogs([]);
-      } else if (currentUser.emailVerified) {
+      } else {
         ensureUserProfile(currentUser).catch((err) => {
           reportFriendlyError(err);
         });
@@ -282,7 +284,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Attach Firestore listeners ONLY when auth is ready and user is authenticated & verified
   useEffect(() => {
-    if (!authReady || !user || !user.emailVerified) return;
+    if (!authReady || !user || user.isAnonymous || !user.emailVerified) return;
 
     const scoresPath = `users/${user.uid}/scores`;
     const scoresQuery = query(
@@ -427,11 +429,31 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 
   const saveGameScore = useCallback(
-    async (input: SaveGameScoreInput) => {
-      if (!user || !user.emailVerified) return;
-
+    async (input: SaveGameScoreInput): Promise<'cloud' | 'anonymous' | 'local'> => {
       try {
-        await ensureUserProfile(user);
+        let activeUser = auth.currentUser ?? user;
+        const isGoogleAccount = Boolean(
+          activeUser && !activeUser.isAnonymous && activeUser.emailVerified
+        );
+
+        if (!activeUser) {
+          try {
+            const anonCred = await signInAnonymously(auth);
+            activeUser = anonCred.user;
+          } catch (anonErr) {
+            const errCode = (anonErr as { code?: string })?.code || '';
+            if (
+              errCode === 'auth/operation-not-allowed' ||
+              errCode === 'auth/admin-restricted-operation'
+            ) {
+              return 'local';
+            }
+            throw anonErr;
+          }
+        }
+
+        if (!activeUser) return 'local';
+
         const safeMode: 'flip' | 'link' = input.gameMode === 'link' ? 'link' : 'flip';
         const safeDifficultyId = sanitizeId(input.difficultyId, 32, 'medium');
         const safeThemeId = sanitizeId(input.themeId, 40, 'candy-spirits');
@@ -443,60 +465,66 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           typeof input.maxCombo === 'number'
             ? Math.min(500, Math.max(1, Math.round(input.maxCombo)))
             : undefined;
-        const displayName = clampString(user.displayName, 60, '糖果玩家');
+        const displayName = isGoogleAccount
+          ? clampString(activeUser.displayName, 60, '糖果玩家')
+          : '匿名玩家';
 
-        const scoreDocId = `${safeMode}_${safeDifficultyId}_${safeThemeId}`;
-        const scorePath = `users/${user.uid}/scores/${scoreDocId}`;
-        const scoreRef = doc(db, 'users', user.uid, 'scores', scoreDocId);
+        if (isGoogleAccount) {
+          await ensureUserProfile(activeUser);
 
-        let existingScoreSnap;
-        try {
-          existingScoreSnap = await getDoc(scoreRef);
-        } catch (err) {
-          handleFirestoreError(err, OperationType.GET, scorePath);
+          const scoreDocId = `${safeMode}_${safeDifficultyId}_${safeThemeId}`;
+          const scorePath = `users/${activeUser.uid}/scores/${scoreDocId}`;
+          const scoreRef = doc(db, 'users', activeUser.uid, 'scores', scoreDocId);
+
+          let existingScoreSnap;
+          try {
+            existingScoreSnap = await getDoc(scoreRef);
+          } catch (err) {
+            handleFirestoreError(err, OperationType.GET, scorePath);
+          }
+
+          const prevHigh = existingScoreSnap?.exists()
+            ? Number(existingScoreSnap.data().highScore ?? 0)
+            : 0;
+
+          if (!existingScoreSnap?.exists()) {
+            const payload: Record<string, unknown> = {
+              userId: activeUser.uid,
+              gameMode: safeMode,
+              themeId: safeThemeId,
+              themeName: safeThemeName,
+              difficultyId: safeDifficultyId,
+              highScore: safeScore,
+              bestTimeSec: safeTime,
+              stars: safeStars,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            };
+            if (safeCombo !== undefined) payload.maxCombo = safeCombo;
+            try {
+              await setDoc(scoreRef, payload);
+            } catch (err) {
+              handleFirestoreError(err, OperationType.CREATE, scorePath);
+            }
+          } else if (safeScore > prevHigh) {
+            const updates: Record<string, unknown> = {
+              themeName: safeThemeName,
+              highScore: safeScore,
+              bestTimeSec: safeTime,
+              stars: safeStars,
+              updatedAt: serverTimestamp(),
+            };
+            if (safeCombo !== undefined) updates.maxCombo = safeCombo;
+            try {
+              await updateDoc(scoreRef, updates);
+            } catch (err) {
+              handleFirestoreError(err, OperationType.UPDATE, scorePath);
+            }
+          }
         }
 
-        const prevHigh = existingScoreSnap?.exists()
-          ? Number(existingScoreSnap.data().highScore ?? 0)
-          : 0;
-
-        if (!existingScoreSnap?.exists()) {
-          const payload: Record<string, unknown> = {
-            userId: user.uid,
-            gameMode: safeMode,
-            themeId: safeThemeId,
-            themeName: safeThemeName,
-            difficultyId: safeDifficultyId,
-            highScore: safeScore,
-            bestTimeSec: safeTime,
-            stars: safeStars,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          };
-          if (safeCombo !== undefined) payload.maxCombo = safeCombo;
-          try {
-            await setDoc(scoreRef, payload);
-          } catch (err) {
-            handleFirestoreError(err, OperationType.CREATE, scorePath);
-          }
-        } else if (safeScore > prevHigh) {
-          const updates: Record<string, unknown> = {
-            themeName: safeThemeName,
-            highScore: safeScore,
-            bestTimeSec: safeTime,
-            stars: safeStars,
-            updatedAt: serverTimestamp(),
-          };
-          if (safeCombo !== undefined) updates.maxCombo = safeCombo;
-          try {
-            await updateDoc(scoreRef, updates);
-          } catch (err) {
-            handleFirestoreError(err, OperationType.UPDATE, scorePath);
-          }
-        }
-
-        // Sync personal best to public leaderboard entry
-        const lbDocId = `${user.uid}_${safeMode}_${safeDifficultyId}_${safeThemeId}`;
+        // Sync personal best to public leaderboard entry (Google user or 匿名玩家)
+        const lbDocId = `${activeUser.uid}_${safeMode}_${safeDifficultyId}_${safeThemeId}`;
         const lbPath = `leaderboard/${lbDocId}`;
         const lbRef = doc(db, 'leaderboard', lbDocId);
 
@@ -514,7 +542,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (!existingLbSnap?.exists()) {
           try {
             await setDoc(lbRef, {
-              userId: user.uid,
+              userId: activeUser.uid,
               displayName,
               gameMode: safeMode,
               themeId: safeThemeId,
@@ -545,8 +573,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             handleFirestoreError(err, OperationType.UPDATE, lbPath);
           }
         }
+
+        return isGoogleAccount ? 'cloud' : 'anonymous';
       } catch (err) {
         reportFriendlyError(err);
+        return 'local';
       }
     },
     [user, ensureUserProfile, reportFriendlyError]
@@ -666,10 +697,13 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [user, reportFriendlyError]
   );
 
+  const isVerifiedGoogleUser = Boolean(user && !user.isAnonymous && user.emailVerified);
+
   return (
     <FirebaseContext.Provider
       value={{
         user,
+        isVerifiedGoogleUser,
         authReady,
         isAuthBusy,
         cloudError,

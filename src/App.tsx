@@ -27,7 +27,7 @@ function loadSavedCustomTheme(): MatchTheme | null {
 }
 
 function AppContent() {
-  const { user, cloudCustomTheme, saveCustomTheme, cloudError, clearCloudError } = useFirebase();
+  const { isVerifiedGoogleUser, cloudCustomTheme, saveCustomTheme, cloudError, clearCloudError } = useFirebase();
   const [activeTab, setActiveTab] = useState<ActiveTab>('flip');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
@@ -43,7 +43,7 @@ function AppContent() {
 
   const handleUpdateCustomTheme = (nextTheme: MatchTheme) => {
     setLocalCustomTheme(nextTheme);
-    if (user && user.emailVerified) {
+    if (isVerifiedGoogleUser) {
       void saveCustomTheme(nextTheme);
     }
   };

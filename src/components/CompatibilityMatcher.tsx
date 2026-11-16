@@ -44,7 +44,7 @@ export const CompatibilityMatcher: React.FC = () => {
   const [mbtiModalOpen, setMbtiModalOpen] = useState(false);
   const [mbtiTargetSide, setMbtiTargetSide] = useState<'A' | 'B'>('A');
 
-  const { user, compatibilityLogs, saveCompatibilityLog, deleteCompatibilityLog, signInWithGoogle } = useFirebase();
+  const { isVerifiedGoogleUser, compatibilityLogs, saveCompatibilityLog, deleteCompatibilityLog, signInWithGoogle } = useFirebase();
 
   const recompute = (
     nextA: PersonData = personA,
@@ -133,11 +133,11 @@ export const CompatibilityMatcher: React.FC = () => {
 
   const handleSaveToCloud = async () => {
     soundFx.playClick();
-    if (!user) {
+    if (!isVerifiedGoogleUser) {
       await signInWithGoogle();
       return;
     }
-    if (!user.emailVerified || isSavingLog) return;
+    if (isSavingLog) return;
     setIsSavingLog(true);
     try {
       await saveCompatibilityLog(result, relationType);
@@ -418,7 +418,7 @@ export const CompatibilityMatcher: React.FC = () => {
                   <Check className="w-3.5 h-3.5" />
                   <span>已存入雲端</span>
                 </>
-              ) : user ? (
+              ) : isVerifiedGoogleUser ? (
                 <>
                   <BookmarkPlus className="w-3.5 h-3.5" />
                   <span>{isSavingLog ? '儲存中...' : '儲存合盤紀錄'}</span>
@@ -568,7 +568,7 @@ export const CompatibilityMatcher: React.FC = () => {
             <Cloud className="w-4 h-4 text-pink-500" />
             <h3 className="text-sm font-black text-slate-800">雲端合盤歷史紀錄</h3>
           </div>
-          {!user && (
+          {!isVerifiedGoogleUser && (
             <button
               type="button"
               onClick={() => {
@@ -583,7 +583,7 @@ export const CompatibilityMatcher: React.FC = () => {
           )}
         </div>
 
-        {!user ? (
+        {!isVerifiedGoogleUser ? (
           <p className="text-xs text-slate-500 font-medium">
             使用 Google 帳號登入後，你可以隨時收藏每一次心動合盤測算，跨裝置查閱過往配對結果。
           </p>

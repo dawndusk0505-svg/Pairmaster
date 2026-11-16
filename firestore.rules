@@ -24,6 +24,15 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
+    function isAnonymousUser() {
+      return isSignedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function canWriteLeaderboard(data) {
+      return isVerifiedUser()
+        || (isAnonymousUser() && data.displayName == '匿名玩家');
+    }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
@@ -280,13 +289,13 @@ service cloud.firestore {
         && ((resource.data.isPublic == true && resource.data.highScore >= 0) || (isSignedIn() && resource.data.userId == request.auth.uid));
       allow list: if resource.data.isPublic == true
         && resource.data.highScore >= 0;
-      allow create: if isVerifiedUser()
+      allow create: if canWriteLeaderboard(incoming())
         && isValidId(entryId)
         && isValidLeaderboardEntry(incoming())
         && entryId == (request.auth.uid + '_' + incoming().gameMode + '_' + incoming().difficultyId + '_' + incoming().themeId)
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
-      allow update: if isVerifiedUser()
+      allow update: if canWriteLeaderboard(incoming())
         && isValidId(entryId)
         && isValidLeaderboardEntry(incoming())
         && existing().userId == request.auth.uid

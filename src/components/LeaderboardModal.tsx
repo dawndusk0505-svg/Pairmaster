@@ -93,7 +93,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   onClose,
   initialTab = 'global',
 }) => {
-  const { user, signInWithGoogle, isAuthBusy, scoresMap } = useFirebase();
+  const { user, isVerifiedGoogleUser, signInWithGoogle, isAuthBusy, scoresMap } = useFirebase();
   const [activeTab, setActiveTab] = useState<'global' | 'mine'>(initialTab);
   const [entries, setEntries] = useState<CloudLeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -276,7 +276,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
         {/* Auth / Personal Summary Strip */}
         <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          {user ? (
+          {isVerifiedGoogleUser && user ? (
             <div className="flex items-center gap-2.5">
               {user.photoURL ? (
                 <img
@@ -301,8 +301,16 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             </div>
           ) : (
             <div className="flex items-center justify-between w-full gap-3">
-              <div className="text-xs text-slate-700 font-bold">
-                登入 Google 帳號即可把你的最高分同步到雲端並登上全服榜！
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-pink-200/80 text-pink-700 font-black flex items-center justify-center text-sm shrink-0">
+                  匿
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-slate-800">匿名玩家</p>
+                  <p className="text-[11px] text-slate-600 font-bold leading-snug">
+                    未登入會以「匿名玩家」登上全服榜；登入可同步跨裝置！
+                  </p>
+                </div>
               </div>
               <button
                 type="button"

@@ -84,7 +84,8 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   const [shuffleCount, setShuffleCount] = useState(3);
   const [highScore, setHighScore] = useState(0);
   const [isNewRecord, setIsNewRecord] = useState(false);
-  const { user, getCloudHighScore, saveGameScore } = useFirebase();
+  const [syncStatus, setSyncStatus] = useState<'cloud' | 'anonymous' | 'local' | null>(null);
+  const { getCloudHighScore, saveGameScore } = useFirebase();
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -173,6 +174,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
     setIsResolving(false);
     setIsVictory(false);
     setIsNewRecord(false);
+    setSyncStatus(null);
     setRemainingTiles(totalCells);
     setHintCount(3);
     setShuffleCount(3);
@@ -235,26 +237,26 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
         return prevHigh;
       });
 
-      if (user && user.emailVerified) {
-        const finalTime = timeRef.current;
-        const stars =
-          finalTime <= difficulty.starSecondsThreshold[0]
-            ? 3
-            : finalTime <= difficulty.starSecondsThreshold[1]
-            ? 2
-            : 1;
-        void saveGameScore({
-          gameMode: 'link',
-          themeId: selectedTheme.id,
-          themeName: selectedTheme.name,
-          difficultyId: difficulty.id,
-          score: finalScore,
-          timeSec: finalTime,
-          stars,
-        });
-      }
+      const finalTime = timeRef.current;
+      const stars =
+        finalTime <= difficulty.starSecondsThreshold[0]
+          ? 3
+          : finalTime <= difficulty.starSecondsThreshold[1]
+          ? 2
+          : 1;
+      void saveGameScore({
+        gameMode: 'link',
+        themeId: selectedTheme.id,
+        themeName: selectedTheme.name,
+        difficultyId: difficulty.id,
+        score: finalScore,
+        timeSec: finalTime,
+        stars,
+      }).then((status) => {
+        setSyncStatus(status);
+      });
     },
-    [difficulty.id, difficulty.starSecondsThreshold, selectedTheme.id, selectedTheme.name, user, saveGameScore]
+    [difficulty.id, difficulty.starSecondsThreshold, selectedTheme.id, selectedTheme.name, saveGameScore]
   );
 
   const handleManualShuffle = () => {
@@ -761,10 +763,16 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
               </div>
             </div>
 
-            {user && user.emailVerified && (
+            {syncStatus && (
               <p className="text-[11px] font-bold text-pink-600 flex items-center justify-center gap-1">
                 <Cloud className="w-3.5 h-3.5" />
-                <span>已同步儲存至個人雲端與榮譽榜 ✓</span>
+                <span>
+                  {syncStatus === 'cloud'
+                    ? '已同步儲存至個人雲端與榮譽榜 ✓'
+                    : syncStatus === 'anonymous'
+                    ? '已以「匿名玩家」登上全服榮譽榜 ✨'
+                    : '已儲存至本機最高紀錄 ✓'}
+                </span>
               </p>
             )}
 

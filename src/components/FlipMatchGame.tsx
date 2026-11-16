@@ -53,7 +53,8 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
   // High score
   const [highScore, setHighScore] = useState(0);
   const [isNewRecord, setIsNewRecord] = useState(false);
-  const { user, getCloudHighScore, saveGameScore } = useFirebase();
+  const [syncStatus, setSyncStatus] = useState<'cloud' | 'anonymous' | 'local' | null>(null);
+  const { getCloudHighScore, saveGameScore } = useFirebase();
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -146,6 +147,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
     setIsGameActive(false);
     setIsVictory(false);
     setIsNewRecord(false);
+    setSyncStatus(null);
     setIsPeeking(false);
     setIsResolving(false);
     setFreezeSeconds(0);
@@ -232,27 +234,27 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
         return prevHigh;
       });
 
-      if (user && user.emailVerified) {
-        const finalMoves = movesRef.current;
-        const stars =
-          finalMoves <= difficulty.starMovesThreshold[0]
-            ? 3
-            : finalMoves <= difficulty.starMovesThreshold[1]
-            ? 2
-            : 1;
-        void saveGameScore({
-          gameMode: 'flip',
-          themeId: selectedTheme.id,
-          themeName: selectedTheme.name,
-          difficultyId: difficulty.id,
-          score: finalScore,
-          timeSec: secondsRef.current,
-          maxCombo: maxComboRef.current,
-          stars,
-        });
-      }
+      const finalMoves = movesRef.current;
+      const stars =
+        finalMoves <= difficulty.starMovesThreshold[0]
+          ? 3
+          : finalMoves <= difficulty.starMovesThreshold[1]
+          ? 2
+          : 1;
+      void saveGameScore({
+        gameMode: 'flip',
+        themeId: selectedTheme.id,
+        themeName: selectedTheme.name,
+        difficultyId: difficulty.id,
+        score: finalScore,
+        timeSec: secondsRef.current,
+        maxCombo: maxComboRef.current,
+        stars,
+      }).then((status) => {
+        setSyncStatus(status);
+      });
     },
-    [difficulty.id, difficulty.starMovesThreshold, selectedTheme.id, selectedTheme.name, scheduleTimeout, user, saveGameScore]
+    [difficulty.id, difficulty.starMovesThreshold, selectedTheme.id, selectedTheme.name, scheduleTimeout, saveGameScore]
   );
 
   const handleCardClick = (index: number) => {
@@ -845,10 +847,16 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
               </span>
             </div>
 
-            {user && user.emailVerified && (
+            {syncStatus && (
               <p className="text-[11px] font-bold text-pink-600 flex items-center justify-center gap-1">
                 <Cloud className="w-3.5 h-3.5" />
-                <span>已同步儲存至個人雲端與榮譽榜 ✓</span>
+                <span>
+                  {syncStatus === 'cloud'
+                    ? '已同步儲存至個人雲端與榮譽榜 ✓'
+                    : syncStatus === 'anonymous'
+                    ? '已以「匿名玩家」登上全服榮譽榜 ✨'
+                    : '已儲存至本機最高紀錄 ✓'}
+                </span>
               </p>
             )}
 
