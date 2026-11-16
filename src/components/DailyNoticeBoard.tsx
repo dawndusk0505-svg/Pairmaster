@@ -411,15 +411,15 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                           <p className="text-xs font-black text-rose-800 truncate">
                             🎶 今日壽星專屬生日歌 · Happy Birthday
                           </p>
-                          <p className="text-[10px] font-bold text-rose-600/90">
-                            {songState === 'playing'
-                              ? '正在為壽星播放生日快樂歌⋯'
-                              : songState === 'waiting_tap'
-                              ? '瀏覽器阻擋自動出聲，輕觸畫面任何位置或右方掣即播'
-                              : songState === 'muted_hint'
-                              ? '目前已設為靜音，請先開啟右上角喇叭'
-                              : '每次進入版面自動播放一次，亦可隨時重播'}
-                          </p>
+                          {songState !== 'idle' && (
+                            <p className="text-[10px] font-bold text-rose-600/90">
+                              {songState === 'playing'
+                                ? '正在為壽星播放生日快樂歌⋯'
+                                : songState === 'waiting_tap'
+                                ? '輕觸畫面任何位置或右方掣即播'
+                                : '目前已設為靜音，請先開啟右上角喇叭'}
+                            </p>
+                          )}
                         </div>
                       </div>
 
