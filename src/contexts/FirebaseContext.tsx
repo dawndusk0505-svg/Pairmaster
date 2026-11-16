@@ -49,6 +49,27 @@ export function getHongKongDateString(date: Date = new Date()): string {
   }).format(date);
 }
 
+export function addDaysToHkDate(dateStr: string, days: number): string {
+  const baseMs = Date.parse(`${dateStr}T12:00:00+08:00`);
+  if (Number.isNaN(baseMs)) return getHongKongDateString();
+  return getHongKongDateString(new Date(baseMs + days * 86400 * 1000));
+}
+
+export function getHongKongDayTimestamps(dateStr: string): {
+  activateAt: Timestamp;
+  expireAt: Timestamp;
+} {
+  const startMs = Date.parse(`${dateStr}T00:00:00+08:00`);
+  const safeStartMs = Number.isNaN(startMs)
+    ? Date.parse(`${getHongKongDateString()}T00:00:00+08:00`)
+    : startMs;
+  const endMs = safeStartMs + 86400 * 1000;
+  return {
+    activateAt: Timestamp.fromMillis(safeStartMs),
+    expireAt: Timestamp.fromMillis(endMs),
+  };
+}
+
 export function getMsUntilHongKongMidnight(now: Date = new Date()): number {
   const hkParts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Hong_Kong',
@@ -135,6 +156,39 @@ export interface AdminUserRecord {
   note: string;
 }
 
+export interface NoticeRequestRecord {
+  id: string;
+  requesterUid: string;
+  type: 'birthday' | 'confession';
+  targetDate: string;
+  recipientName: string;
+  senderName: string;
+  message: string;
+  contactNote?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAtMs: number;
+  reviewedAtMs?: number;
+}
+
+export interface ScheduledNoticeRecord {
+  id: string;
+  type: 'birthday' | 'confession';
+  targetDate: string;
+  recipientName: string;
+  senderName: string;
+  message: string;
+  isActive: boolean;
+}
+
+export interface SubmitNoticeRequestInput {
+  type: 'birthday' | 'confession';
+  targetDate: string;
+  recipientName: string;
+  senderName: string;
+  message: string;
+  contactNote?: string;
+}
+
 interface SaveDailyNoticeInput {
   type: 'birthday' | 'confession';
   recipientName: string;
@@ -192,6 +246,15 @@ interface FirebaseContextValue {
   adminUsers: AdminUserRecord[];
   addAuthorizedAdmin: (uid: string, note: string) => Promise<void>;
   removeAuthorizedAdmin: (uid: string) => Promise<void>;
+  bookedSlotIds: string[];
+  isDateSlotBooked: (type: 'birthday' | 'confession', targetDate: string) => boolean;
+  myNoticeRequests: NoticeRequestRecord[];
+  pendingNoticeRequests: NoticeRequestRecord[];
+  scheduledNotices: ScheduledNoticeRecord[];
+  submitNoticeRequest: (input: SubmitNoticeRequestInput) => Promise<'submitted' | 'need_google'>;
+  approveNoticeRequest: (req: NoticeRequestRecord) => Promise<void>;
+  rejectNoticeRequest: (requestId: string) => Promise<void>;
+  cancelScheduledNotice: (type: 'birthday' | 'confession', targetDate: string) => Promise<void>;
 }
 
 const FirebaseContext = createContext<FirebaseContextValue | null>(null);
@@ -267,6 +330,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
   const [rawNotices, setRawNotices] = useState<DailyNotice[]>([]);
+  const [todayScheduledBirthday, setTodayScheduledBirthday] = useState<DailyNotice | null>(null);
+  const [todayScheduledConfession, setTodayScheduledConfession] = useState<DailyNotice | null>(null);
+  const [bookedSlotIds, setBookedSlotIds] = useState<string[]>([]);
+  const [myNoticeRequests, setMyNoticeRequests] = useState<NoticeRequestRecord[]>([]);
+  const [pendingNoticeRequests, setPendingNoticeRequests] = useState<NoticeRequestRecord[]>([]);
+  const [scheduledNotices, setScheduledNotices] = useState<ScheduledNoticeRecord[]>([]);
   const [todayHkDate, setTodayHkDate] = useState<string>(() => getHongKongDateString());
 
   const profileEnsuredUidRef = useRef<string | null>(null);
@@ -469,16 +538,138 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return () => unsub();
   }, [ensureUserProfile, reportFriendlyError]);
 
-  // Super Admin listener for delegated admin UIDs
+  // Public listener for booked future/current quota slots (spoiler-free)
   useEffect(() => {
-    if (!authReady || !user || user.isAnonymous || !user.emailVerified) return;
+    const slotsPath = 'reservedSlots';
+    const slotsQuery = query(
+      collection(db, slotsPath),
+      where('isBooked', '==', true),
+      limit(200)
+    );
+    const unsub = onSnapshot(
+      slotsQuery,
+      (snapshot) => {
+        setBookedSlotIds(snapshot.docs.map((d) => d.id));
+      },
+      (error) => {
+        try {
+          handleFirestoreError(error, OperationType.LIST, slotsPath);
+        } catch {
+          // non-blocking
+        }
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  // Public time-gated fetch for pre-scheduled notices matching todayHkDate
+  useEffect(() => {
+    let cancelled = false;
+    const loadScheduledToday = async (noticeType: 'birthday' | 'confession') => {
+      const slotId = `${noticeType}_${todayHkDate}`;
+      try {
+        const snap = await getDoc(doc(db, 'scheduledNotices', slotId));
+        if (cancelled) return;
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.isActive && String(data.targetDate) === todayHkDate) {
+            const parsed: DailyNotice = {
+              id: noticeType,
+              type: noticeType,
+              activeDate: todayHkDate,
+              recipientName: String(data.recipientName ?? ''),
+              senderName: String(data.senderName ?? ''),
+              message: String(data.message ?? ''),
+              isActive: true,
+            };
+            if (noticeType === 'birthday') setTodayScheduledBirthday(parsed);
+            else setTodayScheduledConfession(parsed);
+            return;
+          }
+        }
+        if (noticeType === 'birthday') setTodayScheduledBirthday(null);
+        else setTodayScheduledConfession(null);
+      } catch {
+        if (!cancelled) {
+          if (noticeType === 'birthday') setTodayScheduledBirthday(null);
+          else setTodayScheduledConfession(null);
+        }
+      }
+    };
+
+    void loadScheduledToday('birthday');
+    void loadScheduledToday('confession');
+    return () => {
+      cancelled = true;
+    };
+  }, [todayHkDate, bookedSlotIds]);
+
+  // Requester's own submitted notice requests (visible to anonymous or Google users)
+  useEffect(() => {
+    if (!authReady || !user) {
+      setMyNoticeRequests([]);
+      return;
+    }
+
+    const reqPath = 'noticeRequests';
+    const reqQuery = query(
+      collection(db, reqPath),
+      where('requesterUid', '==', user.uid),
+      limit(20)
+    );
+    const unsub = onSnapshot(
+      reqQuery,
+      (snapshot) => {
+        const list: NoticeRequestRecord[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            requesterUid: String(data.requesterUid ?? ''),
+            type: data.type === 'confession' ? 'confession' : 'birthday',
+            targetDate: String(data.targetDate ?? ''),
+            recipientName: String(data.recipientName ?? ''),
+            senderName: String(data.senderName ?? ''),
+            message: String(data.message ?? ''),
+            contactNote: typeof data.contactNote === 'string' ? data.contactNote : undefined,
+            status:
+              data.status === 'approved' || data.status === 'rejected' ? data.status : 'pending',
+            createdAtMs:
+              data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
+            reviewedAtMs:
+              data.reviewedAt instanceof Timestamp ? data.reviewedAt.toMillis() : undefined,
+          };
+        });
+        list.sort((a, b) => b.createdAtMs - a.createdAtMs);
+        setMyNoticeRequests(list);
+      },
+      (error) => {
+        try {
+          handleFirestoreError(error, OperationType.LIST, reqPath);
+        } catch {
+          // non-blocking
+        }
+      }
+    );
+    return () => unsub();
+  }, [authReady, user]);
+
+  // Super Admin listeners: delegated admin UIDs + pending noticeRequests + scheduledNotices
+  useEffect(() => {
+    if (!authReady || !user || user.isAnonymous || !user.emailVerified) {
+      setAdminUsers([]);
+      setPendingNoticeRequests([]);
+      setScheduledNotices([]);
+      return;
+    }
     if (!isSuperAdminEmail(user.email)) {
       setAdminUsers([]);
+      setPendingNoticeRequests([]);
+      setScheduledNotices([]);
       return;
     }
 
     const adminsQuery = query(collection(db, 'admins'), where('uid', '>', ''));
-    const unsub = onSnapshot(
+    const unsubAdmins = onSnapshot(
       adminsQuery,
       (snapshot) => {
         const list: AdminUserRecord[] = snapshot.docs.map((d) => ({
@@ -488,11 +679,76 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setAdminUsers(list);
       },
       () => {
-        // Non-blocking fallback
         setAdminUsers([]);
       }
     );
-    return () => unsub();
+
+    const pendingQuery = query(
+      collection(db, 'noticeRequests'),
+      where('status', '==', 'pending'),
+      limit(100)
+    );
+    const unsubPending = onSnapshot(
+      pendingQuery,
+      (snapshot) => {
+        const list: NoticeRequestRecord[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            requesterUid: String(data.requesterUid ?? ''),
+            type: data.type === 'confession' ? 'confession' : 'birthday',
+            targetDate: String(data.targetDate ?? ''),
+            recipientName: String(data.recipientName ?? ''),
+            senderName: String(data.senderName ?? ''),
+            message: String(data.message ?? ''),
+            contactNote: typeof data.contactNote === 'string' ? data.contactNote : undefined,
+            status: 'pending',
+            createdAtMs:
+              data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
+          };
+        });
+        // Sort strictly earliest-submitted first so admin can tell who was 1st for each date
+        list.sort((a, b) => a.createdAtMs - b.createdAtMs);
+        setPendingNoticeRequests(list);
+      },
+      () => {
+        setPendingNoticeRequests([]);
+      }
+    );
+
+    const scheduledQuery = query(
+      collection(db, 'scheduledNotices'),
+      where('targetDate', '>', ''),
+      limit(100)
+    );
+    const unsubScheduled = onSnapshot(
+      scheduledQuery,
+      (snapshot) => {
+        const list: ScheduledNoticeRecord[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            type: data.type === 'confession' ? 'confession' : 'birthday',
+            targetDate: String(data.targetDate ?? ''),
+            recipientName: String(data.recipientName ?? ''),
+            senderName: String(data.senderName ?? ''),
+            message: String(data.message ?? ''),
+            isActive: Boolean(data.isActive),
+          };
+        });
+        list.sort((a, b) => a.targetDate.localeCompare(b.targetDate));
+        setScheduledNotices(list);
+      },
+      () => {
+        setScheduledNotices([]);
+      }
+    );
+
+    return () => {
+      unsubAdmins();
+      unsubPending();
+      unsubScheduled();
+    };
   }, [authReady, user]);
 
   // Attach Firestore listeners ONLY when auth is ready and user is authenticated & verified
@@ -938,13 +1194,156 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [user, reportFriendlyError]
   );
 
+  const upsertScheduledAndSlot = useCallback(
+    async (params: {
+      type: 'birthday' | 'confession';
+      targetDate: string;
+      recipientName: string;
+      senderName: string;
+      message: string;
+      adminUid: string;
+    }) => {
+      const slotId = `${params.type}_${params.targetDate}`;
+      const { activateAt, expireAt } = getHongKongDayTimestamps(params.targetDate);
+
+      // 1. Upsert scheduledNotices/{slotId}
+      const schedPath = `scheduledNotices/${slotId}`;
+      const schedRef = doc(db, 'scheduledNotices', slotId);
+      let existingSchedSnap;
+      try {
+        existingSchedSnap = await getDoc(schedRef);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, schedPath);
+      }
+
+      if (!existingSchedSnap?.exists()) {
+        try {
+          await setDoc(schedRef, {
+            type: params.type,
+            targetDate: params.targetDate,
+            recipientName: params.recipientName,
+            senderName: params.senderName,
+            message: params.message,
+            isActive: true,
+            activateAt,
+            expireAt,
+            updatedBy: params.adminUid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, schedPath);
+        }
+      } else {
+        try {
+          await updateDoc(schedRef, {
+            recipientName: params.recipientName,
+            senderName: params.senderName,
+            message: params.message,
+            isActive: true,
+            activateAt,
+            expireAt,
+            updatedBy: params.adminUid,
+            updatedAt: serverTimestamp(),
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, schedPath);
+        }
+      }
+
+      // 2. Upsert reservedSlots/{slotId}
+      const slotPath = `reservedSlots/${slotId}`;
+      const slotRef = doc(db, 'reservedSlots', slotId);
+      let existingSlotSnap;
+      try {
+        existingSlotSnap = await getDoc(slotRef);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, slotPath);
+      }
+
+      if (!existingSlotSnap?.exists()) {
+        try {
+          await setDoc(slotRef, {
+            slotId,
+            type: params.type,
+            targetDate: params.targetDate,
+            isBooked: true,
+            createdAt: serverTimestamp(),
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, slotPath);
+        }
+      } else {
+        try {
+          await updateDoc(slotRef, { isBooked: true });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, slotPath);
+        }
+      }
+    },
+    []
+  );
+
+  const publishDailyNoticeDoc = useCallback(
+    async (params: {
+      type: 'birthday' | 'confession';
+      activeDate: string;
+      recipientName: string;
+      senderName: string;
+      message: string;
+      adminUid: string;
+    }) => {
+      const noticeId = params.type === 'confession' ? 'confession' : 'birthday';
+      const path = `dailyNotices/${noticeId}`;
+      const noticeRef = doc(db, 'dailyNotices', noticeId);
+
+      let existingSnap;
+      try {
+        existingSnap = await getDoc(noticeRef);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, path);
+      }
+
+      if (!existingSnap?.exists()) {
+        try {
+          await setDoc(noticeRef, {
+            type: noticeId,
+            activeDate: params.activeDate,
+            recipientName: params.recipientName,
+            senderName: params.senderName,
+            message: params.message,
+            isActive: true,
+            updatedBy: params.adminUid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, path);
+        }
+      } else {
+        try {
+          await updateDoc(noticeRef, {
+            activeDate: params.activeDate,
+            recipientName: params.recipientName,
+            senderName: params.senderName,
+            message: params.message,
+            isActive: true,
+            updatedBy: params.adminUid,
+            updatedAt: serverTimestamp(),
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, path);
+        }
+      }
+    },
+    []
+  );
+
   const saveDailyNotice = useCallback(
     async (input: SaveDailyNoticeInput) => {
       if (!user || user.isAnonymous || !user.emailVerified || !isAdmin) return;
 
       const noticeId = input.type === 'confession' ? 'confession' : 'birthday';
-      const path = `dailyNotices/${noticeId}`;
-      const noticeRef = doc(db, 'dailyNotices', noticeId);
       const activeDate = getHongKongDateString();
       const recipientName = clampString(input.recipientName, 40, '今日壽星');
       const senderName = clampString(
@@ -952,62 +1351,52 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         40,
         noticeId === 'confession' ? ANONYMOUS_DISPLAY_NAME : '神秘祝福者'
       );
-      const message = clampString(input.message, 300, '祝你每日開心甜甜蜜蜜！');
+      const message = clampString(input.message, 10000, '祝你每日開心甜甜蜜蜜！');
 
       try {
-        let existingSnap;
-        try {
-          existingSnap = await getDoc(noticeRef);
-        } catch (err) {
-          handleFirestoreError(err, OperationType.GET, path);
-        }
-
-        if (!existingSnap?.exists()) {
-          try {
-            await setDoc(noticeRef, {
-              type: noticeId,
-              activeDate,
-              recipientName,
-              senderName,
-              message,
-              isActive: true,
-              updatedBy: user.uid,
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            });
-          } catch (err) {
-            handleFirestoreError(err, OperationType.CREATE, path);
-          }
-        } else {
-          try {
-            await updateDoc(noticeRef, {
-              activeDate,
-              recipientName,
-              senderName,
-              message,
-              isActive: true,
-              updatedBy: user.uid,
-              updatedAt: serverTimestamp(),
-            });
-          } catch (err) {
-            handleFirestoreError(err, OperationType.UPDATE, path);
-          }
-        }
+        await publishDailyNoticeDoc({
+          type: noticeId,
+          activeDate,
+          recipientName,
+          senderName,
+          message,
+          adminUid: user.uid,
+        });
+        await upsertScheduledAndSlot({
+          type: noticeId,
+          targetDate: activeDate,
+          recipientName,
+          senderName,
+          message,
+          adminUid: user.uid,
+        });
       } catch (err) {
         reportFriendlyError(err);
         throw err;
       }
     },
-    [user, isAdmin, reportFriendlyError]
+    [user, isAdmin, publishDailyNoticeDoc, upsertScheduledAndSlot, reportFriendlyError]
   );
 
   const clearDailyNotice = useCallback(
     async (type: 'birthday' | 'confession') => {
       if (!user || user.isAnonymous || !user.emailVerified || !isAdmin) return;
       const noticeId = type === 'confession' ? 'confession' : 'birthday';
+      const currentHk = getHongKongDateString();
+      const slotId = `${noticeId}_${currentHk}`;
       const path = `dailyNotices/${noticeId}`;
       try {
         await deleteDoc(doc(db, 'dailyNotices', noticeId));
+        try {
+          await deleteDoc(doc(db, 'reservedSlots', slotId));
+        } catch {
+          // ignore if missing
+        }
+        try {
+          await deleteDoc(doc(db, 'scheduledNotices', slotId));
+        } catch {
+          // ignore if missing
+        }
       } catch (err) {
         try {
           handleFirestoreError(err, OperationType.DELETE, path);
@@ -1015,6 +1404,200 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           reportFriendlyError(wrapped);
           throw wrapped;
         }
+      }
+    },
+    [user, isAdmin, reportFriendlyError]
+  );
+
+  const todayBirthdayNotice =
+    rawNotices.find((n) => n.type === 'birthday' && n.isActive && n.activeDate === todayHkDate) ??
+    todayScheduledBirthday ??
+    null;
+  const todayConfessionNotice =
+    rawNotices.find((n) => n.type === 'confession' && n.isActive && n.activeDate === todayHkDate) ??
+    todayScheduledConfession ??
+    null;
+
+  const isDateSlotBooked = useCallback(
+    (type: 'birthday' | 'confession', targetDate: string) => {
+      const slotId = `${type}_${targetDate}`;
+      if (bookedSlotIds.includes(slotId)) return true;
+      if (targetDate === todayHkDate) {
+        if (type === 'birthday' && todayBirthdayNotice) return true;
+        if (type === 'confession' && todayConfessionNotice) return true;
+      }
+      return false;
+    },
+    [bookedSlotIds, todayHkDate, todayBirthdayNotice, todayConfessionNotice]
+  );
+
+  const submitNoticeRequest = useCallback(
+    async (input: SubmitNoticeRequestInput): Promise<'submitted' | 'need_google'> => {
+      let activeUser = auth.currentUser ?? user;
+      if (!activeUser) {
+        try {
+          const anonCred = await signInAnonymously(auth);
+          activeUser = anonCred.user;
+          setAnonAuthDisabled(false);
+        } catch (anonErr) {
+          const errCode = (anonErr as { code?: string })?.code || '';
+          if (
+            errCode === 'auth/operation-not-allowed' ||
+            errCode === 'auth/admin-restricted-operation'
+          ) {
+            setAnonAuthDisabled(true);
+            return 'need_google';
+          }
+          reportFriendlyError(anonErr);
+          throw anonErr;
+        }
+      }
+
+      if (!activeUser) return 'need_google';
+
+      const safeType: 'birthday' | 'confession' =
+        input.type === 'confession' ? 'confession' : 'birthday';
+      const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(input.targetDate)
+        ? input.targetDate
+        : getHongKongDateString();
+      const recipientName = clampString(input.recipientName, 40, '今日主角');
+      const senderName = clampString(input.senderName, 40, ANONYMOUS_DISPLAY_NAME);
+      const message = clampString(input.message, 10000, '祝福你每日開心快樂！');
+      const cleanContact = (input.contactNote ?? '').trim().slice(0, 80);
+
+      const reqId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const path = `noticeRequests/${reqId}`;
+
+      const payload: Record<string, unknown> = {
+        requesterUid: activeUser.uid,
+        type: safeType,
+        targetDate: safeDate,
+        recipientName,
+        senderName,
+        message,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+      };
+      if (cleanContact) {
+        payload.contactNote = cleanContact;
+      }
+
+      try {
+        await setDoc(doc(db, 'noticeRequests', reqId), payload);
+        return 'submitted';
+      } catch (err) {
+        try {
+          handleFirestoreError(err, OperationType.CREATE, path);
+        } catch (wrapped) {
+          reportFriendlyError(wrapped);
+          throw wrapped;
+        }
+        return 'submitted';
+      }
+    },
+    [user, reportFriendlyError]
+  );
+
+  const approveNoticeRequest = useCallback(
+    async (req: NoticeRequestRecord) => {
+      if (!user || user.isAnonymous || !user.emailVerified || !isSuperAdminEmail(user.email)) {
+        return;
+      }
+
+      const recipientName = clampString(req.recipientName, 40, '今日主角');
+      const senderName = clampString(req.senderName, 40, ANONYMOUS_DISPLAY_NAME);
+      const message = clampString(req.message, 10000, '祝你幸福快樂！');
+      const currentHk = getHongKongDateString();
+
+      try {
+        await upsertScheduledAndSlot({
+          type: req.type,
+          targetDate: req.targetDate,
+          recipientName,
+          senderName,
+          message,
+          adminUid: user.uid,
+        });
+
+        if (req.targetDate === currentHk) {
+          await publishDailyNoticeDoc({
+            type: req.type,
+            activeDate: currentHk,
+            recipientName,
+            senderName,
+            message,
+            adminUid: user.uid,
+          });
+        }
+
+        const reqPath = `noticeRequests/${req.id}`;
+        try {
+          await updateDoc(doc(db, 'noticeRequests', req.id), {
+            status: 'approved',
+            reviewedAt: serverTimestamp(),
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, reqPath);
+        }
+      } catch (err) {
+        reportFriendlyError(err);
+        throw err;
+      }
+    },
+    [user, upsertScheduledAndSlot, publishDailyNoticeDoc, reportFriendlyError]
+  );
+
+  const rejectNoticeRequest = useCallback(
+    async (requestId: string) => {
+      if (!user || user.isAnonymous || !user.emailVerified || !isSuperAdminEmail(user.email)) {
+        return;
+      }
+      const safeReqId = sanitizeId(requestId, 128, '');
+      if (!safeReqId) return;
+
+      const reqPath = `noticeRequests/${safeReqId}`;
+      try {
+        await updateDoc(doc(db, 'noticeRequests', safeReqId), {
+          status: 'rejected',
+          reviewedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        try {
+          handleFirestoreError(err, OperationType.UPDATE, reqPath);
+        } catch (wrapped) {
+          reportFriendlyError(wrapped);
+          throw wrapped;
+        }
+      }
+    },
+    [user, reportFriendlyError]
+  );
+
+  const cancelScheduledNotice = useCallback(
+    async (type: 'birthday' | 'confession', targetDate: string) => {
+      if (!user || user.isAnonymous || !user.emailVerified || !isAdmin) return;
+      const slotId = `${type}_${targetDate}`;
+      try {
+        try {
+          await deleteDoc(doc(db, 'scheduledNotices', slotId));
+        } catch {
+          // ignore
+        }
+        try {
+          await deleteDoc(doc(db, 'reservedSlots', slotId));
+        } catch {
+          // ignore
+        }
+        if (targetDate === getHongKongDateString()) {
+          try {
+            await deleteDoc(doc(db, 'dailyNotices', type));
+          } catch {
+            // ignore
+          }
+        }
+      } catch (err) {
+        reportFriendlyError(err);
+        throw err;
       }
     },
     [user, isAdmin, reportFriendlyError]
@@ -1070,13 +1653,6 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const isVerifiedGoogleUser = Boolean(user && !user.isAnonymous && user.emailVerified);
   const isSuperAdmin = Boolean(isVerifiedGoogleUser && isSuperAdminEmail(user?.email));
 
-  const todayBirthdayNotice =
-    rawNotices.find((n) => n.type === 'birthday' && n.isActive && n.activeDate === todayHkDate) ??
-    null;
-  const todayConfessionNotice =
-    rawNotices.find((n) => n.type === 'confession' && n.isActive && n.activeDate === todayHkDate) ??
-    null;
-
   return (
     <FirebaseContext.Provider
       value={{
@@ -1111,6 +1687,15 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         adminUsers,
         addAuthorizedAdmin,
         removeAuthorizedAdmin,
+        bookedSlotIds,
+        isDateSlotBooked,
+        myNoticeRequests,
+        pendingNoticeRequests,
+        scheduledNotices,
+        submitNoticeRequest,
+        approveNoticeRequest,
+        rejectNoticeRequest,
+        cancelScheduledNotice,
       }}
     >
       {children}

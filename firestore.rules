@@ -232,8 +232,76 @@ service cloud.firestore {
         && data.senderName.size() <= 40
         && data.message is string
         && data.message.size() >= 1
-        && data.message.size() <= 300
+        && data.message.size() <= 10000
         && data.isActive is bool
+        && data.updatedBy is string
+        && isValidId(data.updatedBy)
+        && data.updatedBy == request.auth.uid
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidNoticeRequest(data) {
+      return data.keys().hasAll(['requesterUid', 'type', 'targetDate', 'recipientName', 'senderName', 'message', 'status', 'createdAt'])
+        && data.keys().hasOnly(['requesterUid', 'type', 'targetDate', 'recipientName', 'senderName', 'message', 'contactNote', 'status', 'createdAt', 'reviewedAt'])
+        && data.requesterUid is string
+        && isValidId(data.requesterUid)
+        && data.type in ['birthday', 'confession']
+        && data.targetDate is string
+        && data.targetDate.size() == 10
+        && data.targetDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && data.recipientName is string
+        && data.recipientName.size() >= 1
+        && data.recipientName.size() <= 40
+        && data.senderName is string
+        && data.senderName.size() >= 1
+        && data.senderName.size() <= 40
+        && data.message is string
+        && data.message.size() >= 1
+        && data.message.size() <= 10000
+        && (!('contactNote' in data) || (data.contactNote is string && data.contactNote.size() <= 80))
+        && data.status in ['pending', 'approved', 'rejected']
+        && data.createdAt is timestamp
+        && (!('reviewedAt' in data) || data.reviewedAt is timestamp);
+    }
+
+    function isValidReservedSlot(data, slotId) {
+      return data.keys().hasAll(['slotId', 'type', 'targetDate', 'isBooked', 'createdAt'])
+        && data.keys().hasOnly(['slotId', 'type', 'targetDate', 'isBooked', 'createdAt'])
+        && data.slotId is string
+        && data.slotId.size() >= 12
+        && data.slotId.size() <= 32
+        && data.slotId == slotId
+        && data.type in ['birthday', 'confession']
+        && data.targetDate is string
+        && data.targetDate.size() == 10
+        && data.targetDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && slotId == (data.type + '_' + data.targetDate)
+        && data.isBooked is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidScheduledNotice(data, slotId) {
+      return data.keys().hasAll(['type', 'targetDate', 'recipientName', 'senderName', 'message', 'isActive', 'activateAt', 'expireAt', 'updatedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['type', 'targetDate', 'recipientName', 'senderName', 'message', 'isActive', 'activateAt', 'expireAt', 'updatedBy', 'createdAt', 'updatedAt'])
+        && data.type in ['birthday', 'confession']
+        && data.targetDate is string
+        && data.targetDate.size() == 10
+        && data.targetDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && slotId == (data.type + '_' + data.targetDate)
+        && data.recipientName is string
+        && data.recipientName.size() >= 1
+        && data.recipientName.size() <= 40
+        && data.senderName is string
+        && data.senderName.size() >= 1
+        && data.senderName.size() <= 40
+        && data.message is string
+        && data.message.size() >= 1
+        && data.message.size() <= 10000
+        && data.isActive is bool
+        && data.activateAt is timestamp
+        && data.expireAt is timestamp
+        && data.expireAt > data.activateAt
         && data.updatedBy is string
         && isValidId(data.updatedBy)
         && data.updatedBy == request.auth.uid
@@ -378,6 +446,77 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(noticeId);
+    }
+
+    match /noticeRequests/{requestId} {
+      allow get: if isValidId(requestId)
+        && (isAdmin() || (isSignedIn() && resource != null && resource.data.requesterUid == request.auth.uid));
+      allow list: if isSuperAdmin() || (isSignedIn() && resource.data.requesterUid == request.auth.uid);
+      allow create: if isSignedIn()
+        && isValidId(requestId)
+        && isValidNoticeRequest(incoming())
+        && incoming().requesterUid == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && !('reviewedAt' in incoming());
+      allow update: if isAdmin()
+        && isValidId(requestId)
+        && isValidNoticeRequest(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewedAt'])
+        && incoming().requesterUid == existing().requesterUid
+        && incoming().type == existing().type
+        && incoming().targetDate == existing().targetDate
+        && incoming().createdAt == existing().createdAt
+        && incoming().reviewedAt == request.time;
+      allow delete: if isValidId(requestId)
+        && (isAdmin() || (isSignedIn() && resource != null && resource.data.requesterUid == request.auth.uid));
+    }
+
+    match /reservedSlots/{slotId} {
+      allow get: if isValidId(slotId)
+        && (resource == null || resource.data.isBooked == true || isAdmin());
+      allow list: if resource.data.isBooked == true;
+      allow create: if isAdmin()
+        && isValidId(slotId)
+        && isValidReservedSlot(incoming(), slotId)
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(slotId)
+        && isValidReservedSlot(incoming(), slotId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['isBooked'])
+        && incoming().slotId == existing().slotId
+        && incoming().type == existing().type
+        && incoming().targetDate == existing().targetDate
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() && isValidId(slotId);
+    }
+
+    match /scheduledNotices/{slotId} {
+      allow get: if isValidId(slotId)
+        && (
+          isAdmin()
+          || resource == null
+          || (
+            resource.data.isActive == true
+            && resource.data.activateAt <= request.time
+            && resource.data.expireAt > request.time
+          )
+        );
+      allow list: if isSuperAdmin() && resource.data.targetDate > '';
+      allow create: if isAdmin()
+        && isValidId(slotId)
+        && isValidScheduledNotice(incoming(), slotId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(slotId)
+        && isValidScheduledNotice(incoming(), slotId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['recipientName', 'senderName', 'message', 'isActive', 'activateAt', 'expireAt', 'updatedBy', 'updatedAt'])
+        && incoming().type == existing().type
+        && incoming().targetDate == existing().targetDate
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(slotId);
     }
 
     match /admins/{adminUid} {

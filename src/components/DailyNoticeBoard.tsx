@@ -1,29 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   Cake,
   HeartHandshake,
-  Clock,
   ShieldCheck,
   Settings,
   Sparkles,
   Crown,
   Pin,
+  BellRing,
+  CalendarPlus,
 } from 'lucide-react';
-import { getMsUntilHongKongMidnight, useFirebase } from '../contexts/FirebaseContext';
+import { useFirebase } from '../contexts/FirebaseContext';
 import { soundFx } from '../utils/audio';
 
 interface DailyNoticeBoardProps {
   onOpenAdmin?: () => void;
-}
-
-function formatCountdown(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s
-    .toString()
-    .padStart(2, '0')}`;
+  onOpenSubmit?: (defaultType?: 'birthday' | 'confession') => void;
 }
 
 const FAIRY_BULBS = [
@@ -38,58 +30,114 @@ const FAIRY_BULBS = [
   { color: 'bg-fuchsia-400 shadow-[0_0_8px_#e879f9]', cls: 'twinkle-bulb-3' },
 ];
 
-export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({ onOpenAdmin }) => {
-  const { todayBirthdayNotice, todayConfessionNotice, todayHkDate, isAdmin } = useFirebase();
-  const [msLeft, setMsLeft] = useState<number>(() => getMsUntilHongKongMidnight());
+export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
+  onOpenAdmin,
+  onOpenSubmit,
+}) => {
+  const {
+    todayBirthdayNotice,
+    todayConfessionNotice,
+    todayHkDate,
+    isAdmin,
+    isSuperAdmin,
+    pendingNoticeRequests,
+  } = useFirebase();
 
   const hasAnyNotice = Boolean(todayBirthdayNotice || todayConfessionNotice);
-
-  useEffect(() => {
-    if (!hasAnyNotice && !isAdmin) return;
-    const tick = () => setMsLeft(getMsUntilHongKongMidnight());
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [hasAnyNotice, isAdmin]);
-
-  if (!hasAnyNotice && !isAdmin) {
-    return null;
-  }
+  const pendingCount = isSuperAdmin ? pendingNoticeRequests.length : 0;
 
   return (
     <section
       aria-label="全服置頂今日限定生日祝福欄與表白告示板"
       className="bg-gradient-to-b from-pink-100/85 via-rose-50/75 to-[#FFF5F8] border-b border-pink-200/80 py-3.5 sm:py-4 px-4 sm:px-6"
     >
-      <div className="max-w-6xl mx-auto">
-        {!hasAnyNotice && isAdmin ? (
-          <div className="bg-white/95 border-2 border-pink-300 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+      <div className="max-w-6xl mx-auto space-y-2.5">
+        {/* Super Admin Real-time Notification Strip */}
+        {isSuperAdmin && pendingCount > 0 && onOpenAdmin && (
+          <div
+            role="status"
+            className="bg-gradient-to-r from-amber-400 via-rose-500 to-pink-500 text-white rounded-2xl px-4 py-2.5 shadow-md flex flex-wrap items-center justify-between gap-2 animate-in fade-in duration-200"
+          >
+            <div className="flex items-center gap-2 text-xs sm:text-sm font-black">
+              <span className="w-7 h-7 rounded-xl bg-white/25 flex items-center justify-center shrink-0">
+                <BellRing className="w-4 h-4 animate-bounce" />
+              </span>
+              <span>
+                收到 {pendingCount} 份新的「生日祝福／表白」預約投稿，按時間排序等你允許即刻發佈！
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                onOpenAdmin();
+              }}
+              className="px-3.5 py-1.5 text-xs font-black bg-white text-rose-600 hover:bg-rose-50 rounded-xl shadow-xs cursor-pointer transition-transform active:scale-95 shrink-0"
+            >
+              立即審核並發佈 →
+            </button>
+          </div>
+        )}
+
+        {!hasAnyNotice ? (
+          <div className="bg-white/95 border-2 border-pink-200 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm">
             <div className="flex items-center gap-2.5 text-xs font-bold text-slate-700">
-              <span className="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-400 text-white flex items-center justify-center shrink-0 shadow-xs">
-                <ShieldCheck className="w-4 h-4" />
+              <span className="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 via-rose-400 to-amber-400 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Pin className="w-4 h-4" />
               </span>
               <div>
-                <span className="text-rose-600 font-black">📌 管理員置頂專區</span>
+                <span className="text-rose-600 font-black">
+                  🎂 每日免費生日祝福欄 × 💌 浪漫表白置頂板
+                </span>
                 <span className="mx-1.5 text-slate-300">·</span>
                 <span>
-                  今日（{todayHkDate}）生日祝福欄 (0/1) 及表白告示板 (0/1) 暫未設定，發佈後會即刻置頂顯示！
+                  今日（{todayHkDate}）名額尚餘免費預約，字數不限！想同壽星慶祝或向心儀對象表白？即時揀日子投稿！
                 </span>
               </div>
             </div>
 
-            {onOpenAdmin && (
-              <button
-                type="button"
-                onClick={() => {
-                  soundFx.playClick();
-                  onOpenAdmin();
-                }}
-                className="px-3.5 py-2 text-xs font-black text-white bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 rounded-xl shadow-sm flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>設定今日生日／表白欄</span>
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {onOpenSubmit && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      onOpenSubmit('birthday');
+                    }}
+                    className="px-3 py-1.5 text-xs font-black text-white bg-gradient-to-r from-amber-400 to-rose-500 hover:from-amber-500 hover:to-rose-600 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                  >
+                    <Cake className="w-3.5 h-3.5" />
+                    <span>免費預約生日欄</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      onOpenSubmit('confession');
+                    }}
+                    className="px-3 py-1.5 text-xs font-black text-white bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                  >
+                    <HeartHandshake className="w-3.5 h-3.5" />
+                    <span>投稿表白</span>
+                  </button>
+                </>
+              )}
+
+              {isAdmin && onOpenAdmin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    onOpenAdmin();
+                  }}
+                  className="px-3 py-1.5 text-xs font-black text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-rose-500" />
+                  <span>管理員設定</span>
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
@@ -109,11 +157,20 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({ onOpenAdmin 
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-rose-700 bg-white border border-rose-200 px-2.5 py-1 rounded-xl flex items-center gap-1 font-mono tabular-nums shadow-xs">
-                  <Clock className="w-3 h-3 text-rose-500" />
-                  <span>今晚 00:00 自動消失 · 剩 {formatCountdown(msLeft)}</span>
-                </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {onOpenSubmit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      onOpenSubmit('birthday');
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-black text-white bg-gradient-to-r from-pink-500 to-amber-500 hover:from-pink-600 hover:to-amber-600 rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-xs active:scale-95"
+                  >
+                    <CalendarPlus className="w-3 h-3" />
+                    <span>我想預約生日／投稿表白</span>
+                  </button>
+                )}
 
                 {isAdmin && onOpenAdmin && (
                   <button
@@ -125,7 +182,7 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({ onOpenAdmin 
                     className="px-2.5 py-1 text-[11px] font-black text-pink-700 bg-white hover:bg-pink-50 border border-pink-300 rounded-xl flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
                   >
                     <Settings className="w-3 h-3" />
-                    <span>管理員編輯</span>
+                    <span>管理員編輯{pendingCount > 0 ? ` (${pendingCount})` : ''}</span>
                   </button>
                 )}
               </div>

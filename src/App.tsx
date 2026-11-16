@@ -9,6 +9,7 @@ import { ShareModal } from './components/ShareModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { DailyNoticeBoard } from './components/DailyNoticeBoard';
 import { AdminNoticeModal } from './components/AdminNoticeModal';
+import { NoticeSubmissionModal } from './components/NoticeSubmissionModal';
 import { FirebaseProvider, useFirebase } from './contexts/FirebaseContext';
 import { Sparkles, Grid, Link as LinkIcon, Compass, Heart, Sun, X } from 'lucide-react';
 import { soundFx } from './utils/audio';
@@ -34,8 +35,15 @@ function AppContent() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [submitModalDefaultType, setSubmitModalDefaultType] = useState<'birthday' | 'confession'>('birthday');
   const [leaderboardTab, setLeaderboardTab] = useState<'global' | 'mine'>('global');
   const [localCustomTheme, setLocalCustomTheme] = useState<MatchTheme | null>(loadSavedCustomTheme);
+
+  const openNoticeSubmit = (type: 'birthday' | 'confession' = 'birthday') => {
+    setSubmitModalDefaultType(type);
+    setIsSubmitModalOpen(true);
+  };
 
   const openLeaderboard = (tab: 'global' | 'mine' = 'global') => {
     setLeaderboardTab(tab);
@@ -109,10 +117,20 @@ function AppContent() {
         onClose={() => setIsAdminModalOpen(false)}
       />
 
+      {/* Public Booking & Message Submission Modal */}
+      <NoticeSubmissionModal
+        isOpen={isSubmitModalOpen}
+        onClose={() => setIsSubmitModalOpen(false)}
+        defaultType={submitModalDefaultType}
+      />
+
       {/* Main Content Area */}
       <main className="flex-1 pb-14">
         {/* Pinned Top Notice Board: Birthday Blessing & Confession Board */}
-        <DailyNoticeBoard onOpenAdmin={() => setIsAdminModalOpen(true)} />
+        <DailyNoticeBoard
+          onOpenAdmin={() => setIsAdminModalOpen(true)}
+          onOpenSubmit={(t) => openNoticeSubmit(t)}
+        />
 
         {/* Hero Showcase Section with Pastel Pink Theme */}
         <section className="relative overflow-hidden border-b border-pink-100 bg-gradient-to-b from-pink-100/70 via-rose-50/50 to-[#FFF5F8] py-5 sm:py-6 px-4 sm:px-6">

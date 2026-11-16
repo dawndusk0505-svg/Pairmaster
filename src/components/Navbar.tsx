@@ -23,7 +23,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdmin,
 }) => {
   const [isMuted, setIsMuted] = useState(soundFx.getIsMuted());
-  const { isVerifiedGoogleUser, isAdmin, user, authReady, isAuthBusy, signInWithGoogle, signOutUser } = useFirebase();
+  const {
+    isVerifiedGoogleUser,
+    isAdmin,
+    isSuperAdmin,
+    pendingNoticeRequests,
+    user,
+    authReady,
+    isAuthBusy,
+    signInWithGoogle,
+    signOutUser,
+  } = useFirebase();
+
+  const pendingCount = isSuperAdmin ? pendingNoticeRequests.length : 0;
 
   const handleToggleSound = () => {
     const muted = soundFx.toggleMute();
@@ -92,10 +104,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               title="管理員每日告示設定"
               aria-label="管理員設定"
-              className="p-1.5 sm:px-2.5 sm:py-1.5 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-black"
+              className="relative p-1.5 sm:px-2.5 sm:py-1.5 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-black"
             >
               <ShieldCheck className="w-4 h-4 text-rose-500" />
               <span className="hidden sm:inline">管理員</span>
+              {pendingCount > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 text-[10px] leading-none font-black bg-rose-500 text-white rounded-md animate-pulse">
+                  {pendingCount}
+                </span>
+              )}
             </button>
           )}
           {onOpenLeaderboard && (

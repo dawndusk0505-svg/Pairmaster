@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { X, Copy, Check, QrCode, Smartphone, ExternalLink, Link2 } from 'lucide-react';
+import { X, Copy, Check, QrCode, Smartphone, ExternalLink, Link2, Megaphone } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 
 interface ShareModalProps {
@@ -10,7 +10,8 @@ interface ShareModalProps {
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, appUrl }) => {
-  const [copied, setCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState<'url' | 'promo'>('url');
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const activeUrl = typeof window !== 'undefined' ? window.location.href : appUrl;
 
@@ -31,132 +32,285 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, appUrl 
 
   if (!isOpen) return null;
 
-  const handleCopy = () => {
+  const copyText = async (key: string, text: string) => {
     soundFx.playClick();
-    navigator.clipboard.writeText(activeUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2000);
+    } catch {
+      // ignore
+    }
   };
+
+  const threadsShortCopy = `整咗個超粉嫩療癒嘅配對小遊戲王國 🌸【PairMaster · 奇蹟配對】
+除咗有糖果翻牌記憶、粉彩連連看、仲有 MBTI × 星座契合度合盤、心動破冰卡牌同每日幸運籤卡！💘
+
+✨ 重點彩蛋功能（每日置頂限量 1 位）：
+🎂【免費置頂生日祝福欄】七彩閃燈主角框，每日幫 1 位壽星送上專屬祝福！
+💌【每日限定表白告示板】幫你將心意置頂畀對方睇（可以匿名「唔知邊個(unknown)」㗎🤫）
+
+即點即玩（免下載）👇
+${activeUrl}
+#PairMaster #MBTI配對 #星座合盤 #生日祝福 #表白告示板 #香港小遊戲`;
+
+  const fbIgFullCopy = `🌸 歡迎嚟到【PairMaster · 奇蹟配對王國】💖
+無論想自己解壓玩配對、定同曖昧對象／朋友測合唔合拍，一個網頁玩晒 5 大心靈配對模式：
+
+🃏 1. 糖果翻牌記憶 ＆ 🔗 2. 粉彩連連看（配對成功仲會有愛心星星飛舞 ✨，可衝全服榮譽榜！）
+🧭 3. MBTI × 星座契合度測算（即刻睇下你同佢有幾夾，仲可以儲起合盤紀錄！）
+💘 4. 心動滑卡破冰 ＋ ☀️ 5. 每日幸運色彩美食籤卡
+
+🎁 每日全服置頂特別企劃（每日各限 1 位 · 過午夜 12 點自動撤下）：
+━━━━━━━━━━━━
+🎂【生日祝福欄示範】（每日免費幫 1 位壽星置頂 + 七彩閃燈框主角光環！）
+👑 祝「Fish」生日快樂！｜來自：糖果好友團
+💬「祝今日全場主角 Fish 生日快樂！願你日日甜美開心，翻牌場場破紀錄！🎈💖」
+━━━━━━━━━━━━
+💌【表白告示板示範】（每日限定 1 則 · 可實名或匿名）
+💕 致：成日同我一齊玩配對嘅你｜告白人：唔知邊個(unknown)
+💬「其實每次同你測 MBTI 同星座合盤我都偷偷 cap 低咗圖，好鍾意同你一齊玩嘅感覺 💕🌹」
+━━━━━━━━━━━━
+
+想幫朋友登免費生日置頂／投稿今日表白，歡迎 DM 我排期呀！💌
+立即免費開玩 👉 ${activeUrl}`;
 
   return (
     <div className="fixed inset-0 z-50 bg-pink-950/40 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white border-2 border-pink-300 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white border-2 border-pink-300 rounded-3xl p-5 sm:p-7 max-w-lg w-full shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-pink-100 pb-4">
+        <div className="flex items-center justify-between border-b border-pink-100 pb-3 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-pink-100 border border-pink-200 flex items-center justify-center text-pink-600 shadow-xs">
-              <QrCode className="w-4 h-4" />
+              {activeTab === 'url' ? <QrCode className="w-4 h-4" /> : <Megaphone className="w-4 h-4" />}
             </div>
             <div>
-              <h3 className="text-base font-black text-slate-900">分享與自訂簡單網址 🌸</h3>
-              <span className="text-xs text-pink-500 font-mono font-bold">SHARE & CUSTOM SHORT URL</span>
+              <h3 className="text-base font-black text-slate-900">分享與社群宣傳包 🌸</h3>
+              <span className="text-xs text-pink-500 font-mono font-bold">
+                SHARE, QR & SOCIAL PROMO
+              </span>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={() => {
               soundFx.playClick();
               onClose();
             }}
+            aria-label="關閉分享視窗"
             className="p-1.5 text-slate-400 hover:text-pink-600 rounded-xl hover:bg-pink-100 cursor-pointer transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Option 1: Instant QR Code Scan */}
-        <div className="bg-pink-50/70 border border-pink-200 rounded-3xl p-4 flex flex-col sm:flex-row items-center gap-5">
-          {qrDataUrl ? (
-            <div className="p-2 bg-white rounded-2xl shadow-md border-2 border-pink-200 shrink-0">
-              <img src={qrDataUrl} alt="掃描進入配對王國" className="w-32 h-32 block rounded-xl" />
-            </div>
+        {/* Mode Switcher Tabs */}
+        <div className="grid grid-cols-2 gap-1.5 p-1 bg-pink-100/70 rounded-2xl border border-pink-200 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playClick();
+              setActiveTab('url');
+            }}
+            className={`py-2 px-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'url'
+                ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
+                : 'text-slate-600 hover:text-pink-600'
+            }`}
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>專屬網址與 QR</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playClick();
+              setActiveTab('promo');
+            }}
+            className={`py-2 px-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'promo'
+                ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
+                : 'text-slate-600 hover:text-pink-600'
+            }`}
+          >
+            <Megaphone className="w-3.5 h-3.5" />
+            <span>FB/IG/Threads 文案</span>
+          </button>
+        </div>
+
+        {/* Tab Body */}
+        <div className="flex-1 overflow-y-auto space-y-4 pr-0.5">
+          {activeTab === 'url' ? (
+            <>
+              {/* Option 1: Instant QR Code Scan */}
+              <div className="bg-pink-50/70 border border-pink-200 rounded-3xl p-4 flex flex-col sm:flex-row items-center gap-5">
+                {qrDataUrl ? (
+                  <div className="p-2 bg-white rounded-2xl shadow-md border-2 border-pink-200 shrink-0">
+                    <img src={qrDataUrl} alt="掃描進入配對王國" className="w-32 h-32 block rounded-xl" />
+                  </div>
+                ) : (
+                  <div className="w-32 h-32 bg-pink-100 rounded-2xl animate-pulse shrink-0" />
+                )}
+
+                <div className="space-y-1.5 text-center sm:text-left">
+                  <span className="text-xs font-black text-pink-600 flex items-center justify-center sm:justify-start gap-1">
+                    <Smartphone className="w-3.5 h-3.5" />
+                    <span>手機相機一掃即開（最方便）</span>
+                  </span>
+                  <p className="text-xs text-slate-600 leading-relaxed font-bold">
+                    朋友唔需要手動輸入長網址，只要開啟手機相機掃描 QR Code，就可以即時進入遊戲！
+                  </p>
+                </div>
+              </div>
+
+              {/* Current URL Copy */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-600 font-bold">目前專屬網址：</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={activeUrl}
+                    className="flex-1 px-3.5 py-2 text-xs bg-pink-50/50 border border-pink-200 rounded-xl text-slate-700 font-mono truncate select-all focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void copyText('url', activeUrl)}
+                    className="px-4 py-2 text-xs font-black text-white bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 rounded-xl transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs active:scale-95"
+                  >
+                    {copiedKey === 'url' ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>{copiedKey === 'url' ? '已複製' : '複製網址'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Short URL Guide */}
+              <div className="p-4 rounded-3xl bg-pink-50/60 border border-pink-200 space-y-3">
+                <div className="flex items-center gap-1.5 text-pink-600 text-xs font-black">
+                  <Link2 className="w-4 h-4" />
+                  <span>自訂好記的專屬短網址：</span>
+                </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed font-bold">
+                  你可以免費將上面呢串網址縮成好似{' '}
+                  <span className="text-pink-600 font-mono">tinyurl.com/pair-Fish</span> 咁簡單嘅網址：
+                </p>
+
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-pink-200">
+                    <div>
+                      <span className="text-slate-900 font-black block">TinyURL 自訂別名</span>
+                      <span className="text-[11px] text-pink-500 font-bold">
+                        自訂專屬單字（例如 tinyurl.com/pair-Fish）
+                      </span>
+                    </div>
+                    <a
+                      href={`https://tinyurl.com/create.php?url=${encodeURIComponent(activeUrl)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded-xl font-bold flex items-center gap-1 shadow-xs"
+                    >
+                      <span>立即建立</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+
+                  <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-pink-200">
+                    <div>
+                      <span className="text-slate-900 font-black block">Reurl.cc 縮網址</span>
+                      <span className="text-[11px] text-slate-500 font-bold">
+                        免註冊，秒速縮成極短英數網址
+                      </span>
+                    </div>
+                    <a
+                      href="https://reurl.cc/main/tw"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 text-xs text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold flex items-center gap-1"
+                    >
+                      <span>前往縮網址</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </>
           ) : (
-            <div className="w-32 h-32 bg-pink-100 rounded-2xl animate-pulse shrink-0" />
+            <div className="space-y-4">
+              {/* Threads / IG Story Copy */}
+              <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black text-pink-700">
+                    🧵 Threads ／ IG 精簡吸睛版（含生日、表白、MBTI）
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void copyText('threads', threadsShortCopy)}
+                    className="px-2.5 py-1 text-[11px] font-black text-white bg-pink-500 hover:bg-pink-600 rounded-xl flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    {copiedKey === 'threads' ? (
+                      <>
+                        <Check className="w-3 h-3" />
+                        <span>已複製</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>一鍵複製</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <pre className="text-[11px] text-slate-700 font-sans whitespace-pre-wrap bg-white border border-pink-100 rounded-xl p-3 leading-relaxed">
+                  {threadsShortCopy}
+                </pre>
+              </div>
+
+              {/* FB / IG Detailed Post with Demo Examples */}
+              <div className="bg-rose-50/70 border border-rose-200 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black text-rose-700">
+                    📘 FB ／ IG 完整介紹版（連生日＆表白示範例子）
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void copyText('fb', fbIgFullCopy)}
+                    className="px-2.5 py-1 text-[11px] font-black text-white bg-rose-500 hover:bg-rose-600 rounded-xl flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    {copiedKey === 'fb' ? (
+                      <>
+                        <Check className="w-3 h-3" />
+                        <span>已複製</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>一鍵複製</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <pre className="text-[11px] text-slate-700 font-sans whitespace-pre-wrap bg-white border border-rose-100 rounded-xl p-3 leading-relaxed">
+                  {fbIgFullCopy}
+                </pre>
+              </div>
+            </div>
           )}
-
-          <div className="space-y-1.5 text-center sm:text-left">
-            <span className="text-xs font-black text-pink-600 flex items-center justify-center sm:justify-start gap-1">
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>手機相機一掃即開（最方便）</span>
-            </span>
-            <p className="text-xs text-slate-600 leading-relaxed font-bold">
-              朋友唔需要手動輸入長網址，只要開啟手機相機掃描 QR Code，就可以即時進入遊戲！
-            </p>
-          </div>
-        </div>
-
-        {/* Current URL Copy */}
-        <div className="space-y-1.5">
-          <label className="text-xs text-slate-600 font-bold">目前專屬網址：</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              readOnly
-              value={activeUrl}
-              className="flex-1 px-3.5 py-2 text-xs bg-pink-50/50 border border-pink-200 rounded-xl text-slate-700 font-mono truncate select-all focus:outline-none"
-            />
-            <button
-              onClick={handleCopy}
-              className="px-4 py-2 text-xs font-black text-white bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 rounded-xl transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs active:scale-95"
-            >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? '已複製' : '複製網址'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Short URL Guide */}
-        <div className="p-4 rounded-3xl bg-pink-50/60 border border-pink-200 space-y-3">
-          <div className="flex items-center gap-1.5 text-pink-600 text-xs font-black">
-            <Link2 className="w-4 h-4" />
-            <span>自訂好記的專屬短網址：</span>
-          </div>
-
-          <p className="text-xs text-slate-600 leading-relaxed font-bold">
-            你可以免費將上面呢串網址縮成好似 <span className="text-pink-600 font-mono">tinyurl.com/pair-Fish</span> 咁簡單嘅網址：
-          </p>
-
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-pink-200">
-              <div>
-                <span className="text-slate-900 font-black block">TinyURL 自訂別名</span>
-                <span className="text-[11px] text-pink-500 font-bold">自訂專屬單字（例如 tinyurl.com/pair-Fish）</span>
-              </div>
-              <a
-                href={`https://tinyurl.com/create.php?url=${encodeURIComponent(activeUrl)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded-xl font-bold flex items-center gap-1 shadow-xs"
-              >
-                <span>立即建立</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-pink-200">
-              <div>
-                <span className="text-slate-900 font-black block">Reurl.cc 縮網址</span>
-                <span className="text-[11px] text-slate-500 font-bold">免註冊，秒速縮成極短英數網址</span>
-              </div>
-              <a
-                href="https://reurl.cc/main/tw"
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1.5 text-xs text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold flex items-center gap-1"
-              >
-                <span>前往縮網址</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-          </div>
         </div>
 
         <button
+          type="button"
           onClick={() => {
             soundFx.playClick();
             onClose();
           }}
-          className="w-full py-2.5 text-xs font-black text-slate-600 bg-slate-100 hover:bg-pink-100 hover:text-pink-700 rounded-2xl transition-colors cursor-pointer"
+          className="w-full py-2.5 text-xs font-black text-slate-600 bg-slate-100 hover:bg-pink-100 hover:text-pink-700 rounded-2xl transition-colors cursor-pointer shrink-0"
         >
           返回遊戲 🌸
         </button>

@@ -310,7 +310,7 @@
         "message": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 300
+          "maxLength": 10000
         },
         "isActive": {
           "type": "boolean"
@@ -337,6 +337,172 @@
         "senderName",
         "message",
         "isActive",
+        "updatedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "NoticeRequest": {
+      "title": "NoticeRequest",
+      "description": "User-submitted Birthday Blessing or Confession booking request queued by server timestamp for admin review.",
+      "type": "object",
+      "properties": {
+        "requesterUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["birthday", "confession"]
+        },
+        "targetDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "recipientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        },
+        "contactNote": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "requesterUid",
+        "type",
+        "targetDate",
+        "recipientName",
+        "senderName",
+        "message",
+        "status",
+        "createdAt"
+      ]
+    },
+    "ReservedSlot": {
+      "title": "ReservedSlot",
+      "description": "Public spoiler-free quota availability record indicating whether a date/type slot is already booked.",
+      "type": "object",
+      "properties": {
+        "slotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^(birthday|confession)_[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["birthday", "confession"]
+        },
+        "targetDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "isBooked": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["slotId", "type", "targetDate", "isBooked", "createdAt"]
+    },
+    "ScheduledNotice": {
+      "title": "ScheduledNotice",
+      "description": "Admin-approved notice scheduled for a specific targetDate, time-gated in rules by activateAt and expireAt.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["birthday", "confession"]
+        },
+        "targetDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "recipientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "activateAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expireAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "type",
+        "targetDate",
+        "recipientName",
+        "senderName",
+        "message",
+        "isActive",
+        "activateAt",
+        "expireAt",
         "updatedBy",
         "createdAt",
         "updatedAt"
@@ -390,6 +556,18 @@
     "/dailyNotices/{noticeId}": {
       "schema": { "$ref": "#/entities/DailyNotice" },
       "description": "Daily single-slot Birthday Blessing ('birthday') and Confession Board ('confession') managed only by admins."
+    },
+    "/noticeRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/NoticeRequest" },
+      "description": "Queue of player-submitted Birthday Blessing and Confession booking requests ordered by server timestamp."
+    },
+    "/reservedSlots/{slotId}": {
+      "schema": { "$ref": "#/entities/ReservedSlot" },
+      "description": "Spoiler-free public availability flags for booked (type, targetDate) slots."
+    },
+    "/scheduledNotices/{slotId}": {
+      "schema": { "$ref": "#/entities/ScheduledNotice" },
+      "description": "Time-gated approved notices for future or current dates."
     },
     "/admins/{adminUid}": {
       "schema": { "$ref": "#/entities/AdminUser" },
