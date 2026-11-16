@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   XCircle,
   Award,
+  Camera,
 } from 'lucide-react';
 import {
   ANONYMOUS_DISPLAY_NAME,
@@ -24,6 +25,7 @@ import {
   useFirebase,
 } from '../contexts/FirebaseContext';
 import { soundFx } from '../utils/audio';
+import { compressNoticePhoto } from '../utils/imageCompress';
 
 interface AdminNoticeModalProps {
   isOpen: boolean;
@@ -80,6 +82,8 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
   const [recipientName, setRecipientName] = useState('');
   const [senderName, setSenderName] = useState('');
   const [message, setMessage] = useState('');
+  const [photoDataUrl, setPhotoDataUrl] = useState('');
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [busyReqId, setBusyReqId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -111,12 +115,35 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
       setRecipientName(todayBirthdayNotice?.recipientName ?? '');
       setSenderName(todayBirthdayNotice?.senderName ?? '');
       setMessage(todayBirthdayNotice?.message ?? '');
+      setPhotoDataUrl(todayBirthdayNotice?.photoDataUrl ?? '');
     } else if (activeTab === 'confession') {
       setRecipientName(todayConfessionNotice?.recipientName ?? '');
       setSenderName(todayConfessionNotice?.senderName ?? '');
       setMessage(todayConfessionNotice?.message ?? '');
+      setPhotoDataUrl(todayConfessionNotice?.photoDataUrl ?? '');
     }
   }, [isOpen, activeTab, todayBirthdayNotice, todayConfessionNotice]);
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setIsProcessingPhoto(true);
+    setFeedback(null);
+    try {
+      const compressed = await compressNoticePhoto(file);
+      setPhotoDataUrl(compressed);
+      soundFx.playClick();
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : '相片處理失敗，請換另一張相片再試。',
+      });
+    } finally {
+      setIsProcessingPhoto(false);
+    }
+  };
 
   // Group pending requests by (targetDate, type) and rank chronologically so the 1st person is unmistakable
   const groupedPending = useMemo(() => {
@@ -179,6 +206,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
         recipientName: cleanRecipient,
         senderName: cleanSender,
         message: cleanMessage,
+        photoDataUrl: photoDataUrl || undefined,
       });
       setFeedback({
         type: 'ok',
@@ -206,6 +234,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
       setRecipientName('');
       setSenderName('');
       setMessage('');
+      setPhotoDataUrl('');
       setFeedback({
         type: 'ok',
         text: '已立即手動撤下該欄告示（今日名額已釋放為 0/1）。',
@@ -549,9 +578,23 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                                 )}
                               </div>
 
-                              <p className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs sm:text-sm text-slate-800 font-medium whitespace-pre-wrap break-words leading-relaxed">
-                                {req.message}
-                              </p>
+                              <div className="flex flex-col sm:flex-row gap-2.5 items-start">
+                                {req.photoDataUrl && (
+                                  <div className="shrink-0">
+                                    <img
+                                      src={req.photoDataUrl}
+                                      alt={`${req.recipientName} 附帶相片`}
+                                      className="w-24 h-24 rounded-xl object-cover border-2 border-amber-200 shadow-xs"
+                                    />
+                                    <span className="block text-[10px] font-bold text-center text-amber-700 mt-0.5">
+                                      📷 附帶相片
+                                    </span>
+                                  </div>
+                                )}
+                                <p className="flex-1 w-full bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs sm:text-sm text-slate-800 font-medium whitespace-pre-wrap break-words leading-relaxed">
+                                  {req.message}
+                                </p>
+                              </div>
 
                               <div className="flex flex-wrap items-center gap-2 pt-0.5">
                                 <button
@@ -635,9 +678,18 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                       致 <span className="text-rose-600">{item.recipientName}</span> · 來自{' '}
                       <span className="text-pink-700">{item.senderName}</span>
                     </p>
-                    <p className="text-xs text-slate-600 bg-slate-50 rounded-xl p-2.5 whitespace-pre-wrap break-words">
-                      {item.message}
-                    </p>
+                    <div className="flex items-start gap-2.5">
+                      {item.photoDataUrl && (
+                        <img
+                          src={item.photoDataUrl}
+                          alt="已排期相片"
+                          className="w-16 h-16 rounded-xl object-cover border border-pink-200 shrink-0"
+                        />
+                      )}
+                      <p className="flex-1 text-xs text-slate-600 bg-slate-50 rounded-xl p-2.5 whitespace-pre-wrap break-words">
+                        {item.message}
+                      </p>
+                    </div>
                   </div>
                 ))
               )}
@@ -772,10 +824,58 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                 />
               </div>
 
+              {/* Optional Photo Upload */}
+              <div className="bg-amber-50/60 border border-amber-200 rounded-2xl p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Camera className="w-4 h-4 text-amber-500" />
+                    <span>上載相片（選填 · 壽星人像／寵物／合照）</span>
+                  </span>
+                  {photoDataUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playClick();
+                        setPhotoDataUrl('');
+                      }}
+                      className="text-[11px] font-black text-rose-600 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>移除相片</span>
+                    </button>
+                  )}
+                </div>
+
+                {photoDataUrl ? (
+                  <div className="flex items-center gap-3 bg-white border border-amber-200 rounded-xl p-2">
+                    <img
+                      src={photoDataUrl}
+                      alt="預覽相片"
+                      className="w-16 h-16 rounded-xl object-cover border-2 border-pink-200 shrink-0"
+                    />
+                    <span className="text-[11px] font-bold text-emerald-700">
+                      ✅ 已附帶相片，發佈後會以「主角相框」一齊顯示喺置頂欄！
+                    </span>
+                  </div>
+                ) : (
+                  <label className="flex items-center justify-center gap-2 py-2 px-3 bg-white hover:bg-amber-50 border border-dashed border-amber-300 rounded-xl text-xs font-black text-amber-700 cursor-pointer transition-colors">
+                    <Camera className="w-4 h-4" />
+                    <span>{isProcessingPhoto ? '壓縮處理中...' : '從相簿揀選相片上載'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={isProcessingPhoto}
+                      onChange={(e) => void handlePhotoSelect(e)}
+                      className="sr-only"
+                    />
+                  </label>
+                )}
+              </div>
+
               <div className="flex items-center gap-2.5 pt-1">
                 <button
                   type="submit"
-                  disabled={isSaving}
+                  disabled={isSaving || isProcessingPhoto}
                   className="flex-1 py-2.5 px-4 text-xs sm:text-sm font-black text-white bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 rounded-2xl shadow-md shadow-pink-200 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
                 >
                   <Send className="w-4 h-4" />

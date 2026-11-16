@@ -10,6 +10,8 @@ import {
   Send,
   Sparkles,
   LogIn,
+  Camera,
+  Trash2,
 } from 'lucide-react';
 import {
   ANONYMOUS_DISPLAY_NAME,
@@ -17,6 +19,7 @@ import {
   useFirebase,
 } from '../contexts/FirebaseContext';
 import { soundFx } from '../utils/audio';
+import { compressNoticePhoto } from '../utils/imageCompress';
 
 interface NoticeSubmissionModalProps {
   isOpen: boolean;
@@ -55,6 +58,8 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
   const [recipientName, setRecipientName] = useState('');
   const [senderName, setSenderName] = useState('');
   const [message, setMessage] = useState('');
+  const [photoDataUrl, setPhotoDataUrl] = useState<string>('');
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
   const [contactNote, setContactNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [needGoogleSignIn, setNeedGoogleSignIn] = useState(false);
@@ -67,6 +72,27 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
     setFeedback(null);
     setNeedGoogleSignIn(false);
   }, [isOpen, defaultType, todayHkDate]);
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setIsProcessingPhoto(true);
+    setFeedback(null);
+    try {
+      const compressed = await compressNoticePhoto(file);
+      setPhotoDataUrl(compressed);
+      soundFx.playClick();
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : '相片處理失敗，請換另一張相片再試。',
+      });
+    } finally {
+      setIsProcessingPhoto(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -107,6 +133,7 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
         recipientName: cleanRecipient,
         senderName: cleanSender,
         message: cleanMessage,
+        photoDataUrl: photoDataUrl || undefined,
         contactNote: contactNote.trim(),
       });
 
@@ -123,6 +150,7 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
       setRecipientName('');
       setSenderName('');
       setMessage('');
+      setPhotoDataUrl('');
       setContactNote('');
       setFeedback({
         type: 'ok',
@@ -408,6 +436,59 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
               />
             </div>
 
+            {/* Optional Photo Upload (Person / Pet / Couple) */}
+            <div className="bg-amber-50/60 border border-amber-200 rounded-2xl p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                  <Camera className="w-4 h-4 text-amber-500" />
+                  <span>上載相片（選填 · 壽星／毛孩寵物／甜蜜合照都得！）</span>
+                </span>
+                {photoDataUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      setPhotoDataUrl('');
+                    }}
+                    className="text-[11px] font-black text-rose-600 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>移除相片</span>
+                  </button>
+                )}
+              </div>
+
+              {photoDataUrl ? (
+                <div className="flex items-center gap-3 bg-white border border-amber-200 rounded-xl p-2">
+                  <img
+                    src={photoDataUrl}
+                    alt="預覽相片"
+                    className="w-20 h-20 rounded-xl object-cover border-2 border-pink-200 shrink-0 shadow-xs"
+                  />
+                  <div className="text-[11px] text-slate-600 font-bold space-y-1">
+                    <p className="text-emerald-700 font-black">✅ 已選取並自動優化相片大小！</p>
+                    <p>批核發佈後，張相會以「主角相框」置頂顯示喺祝福／表白卡上面，大家一齊慶祝更開心！</p>
+                  </div>
+                </div>
+              ) : (
+                <label className="flex items-center justify-center gap-2 py-2.5 px-3 bg-white hover:bg-amber-50 border border-dashed border-amber-300 rounded-xl text-xs font-black text-amber-700 cursor-pointer transition-colors">
+                  <Camera className="w-4 h-4" />
+                  <span>
+                    {isProcessingPhoto
+                      ? '正在壓縮優化相片...'
+                      : '撳呢度從相簿揀選相片（人像／貓貓狗狗／寵物相）'}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={isProcessingPhoto}
+                    onChange={(e) => void handlePhotoSelect(e)}
+                    className="sr-only"
+                  />
+                </label>
+              )}
+            </div>
+
             <div>
               <label className="block text-xs font-black text-slate-700 mb-1">
                 💬 聯絡備註（選填 · 例如你的 IG／Threads 名稱，只有版主睇到）
@@ -424,7 +505,7 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isProcessingPhoto}
               className="w-full py-3 px-4 text-sm font-black text-white bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 hover:from-pink-600 hover:to-rose-600 rounded-2xl shadow-md shadow-pink-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 transition-all active:scale-99"
             >
               <Send className="w-4 h-4" />
@@ -473,9 +554,18 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
                           : '⏳ 等待版主審核通知中'}
                       </span>
                     </div>
-                    <p className="text-slate-600 font-medium line-clamp-2 whitespace-pre-wrap">
-                      {req.message}
-                    </p>
+                    <div className="flex items-start gap-2.5">
+                      {req.photoDataUrl && (
+                        <img
+                          src={req.photoDataUrl}
+                          alt="附帶相片"
+                          className="w-12 h-12 rounded-xl object-cover border border-pink-200 shrink-0"
+                        />
+                      )}
+                      <p className="text-slate-600 font-medium line-clamp-2 whitespace-pre-wrap flex-1">
+                        {req.message}
+                      </p>
+                    </div>
                     <p className="text-[10px] text-slate-400 font-mono">
                       送出時間：{formatSubmitTime(req.createdAtMs)}（系統已排隊記序）
                     </p>

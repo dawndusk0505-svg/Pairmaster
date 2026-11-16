@@ -56,6 +56,22 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidPhotoDataUrl(val) {
+      return val is string
+        && val.size() <= 250000
+        && (
+          val.size() == 0
+          || (
+            val.size() >= 30
+            && (
+              val[0:22] == 'data:image/jpeg;base64'
+              || val[0:21] == 'data:image/png;base64'
+              || val[0:22] == 'data:image/webp;base64'
+            )
+          )
+        );
+    }
+
     function parentUserExists(userId) {
       return exists(/databases/$(database)/documents/users/$(userId));
     }
@@ -219,7 +235,7 @@ service cloud.firestore {
     function isValidDailyNotice(data, noticeId) {
       return noticeId in ['birthday', 'confession']
         && data.keys().hasAll(['type', 'activeDate', 'recipientName', 'senderName', 'message', 'isActive', 'updatedBy', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['type', 'activeDate', 'recipientName', 'senderName', 'message', 'isActive', 'updatedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['type', 'activeDate', 'recipientName', 'senderName', 'message', 'photoDataUrl', 'isActive', 'updatedBy', 'createdAt', 'updatedAt'])
         && data.type == noticeId
         && data.activeDate is string
         && data.activeDate.size() == 10
@@ -233,6 +249,7 @@ service cloud.firestore {
         && data.message is string
         && data.message.size() >= 1
         && data.message.size() <= 10000
+        && (!('photoDataUrl' in data) || isValidPhotoDataUrl(data.photoDataUrl))
         && data.isActive is bool
         && data.updatedBy is string
         && isValidId(data.updatedBy)
@@ -243,7 +260,7 @@ service cloud.firestore {
 
     function isValidNoticeRequest(data) {
       return data.keys().hasAll(['requesterUid', 'type', 'targetDate', 'recipientName', 'senderName', 'message', 'status', 'createdAt'])
-        && data.keys().hasOnly(['requesterUid', 'type', 'targetDate', 'recipientName', 'senderName', 'message', 'contactNote', 'status', 'createdAt', 'reviewedAt'])
+        && data.keys().hasOnly(['requesterUid', 'type', 'targetDate', 'recipientName', 'senderName', 'message', 'photoDataUrl', 'contactNote', 'status', 'createdAt', 'reviewedAt'])
         && data.requesterUid is string
         && isValidId(data.requesterUid)
         && data.type in ['birthday', 'confession']
@@ -259,6 +276,7 @@ service cloud.firestore {
         && data.message is string
         && data.message.size() >= 1
         && data.message.size() <= 10000
+        && (!('photoDataUrl' in data) || isValidPhotoDataUrl(data.photoDataUrl))
         && (!('contactNote' in data) || (data.contactNote is string && data.contactNote.size() <= 80))
         && data.status in ['pending', 'approved', 'rejected']
         && data.createdAt is timestamp
@@ -283,7 +301,7 @@ service cloud.firestore {
 
     function isValidScheduledNotice(data, slotId) {
       return data.keys().hasAll(['type', 'targetDate', 'recipientName', 'senderName', 'message', 'isActive', 'activateAt', 'expireAt', 'updatedBy', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['type', 'targetDate', 'recipientName', 'senderName', 'message', 'isActive', 'activateAt', 'expireAt', 'updatedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['type', 'targetDate', 'recipientName', 'senderName', 'message', 'photoDataUrl', 'isActive', 'activateAt', 'expireAt', 'updatedBy', 'createdAt', 'updatedAt'])
         && data.type in ['birthday', 'confession']
         && data.targetDate is string
         && data.targetDate.size() == 10
@@ -298,6 +316,7 @@ service cloud.firestore {
         && data.message is string
         && data.message.size() >= 1
         && data.message.size() <= 10000
+        && (!('photoDataUrl' in data) || isValidPhotoDataUrl(data.photoDataUrl))
         && data.isActive is bool
         && data.activateAt is timestamp
         && data.expireAt is timestamp
@@ -441,7 +460,7 @@ service cloud.firestore {
       allow update: if isAdmin()
         && isValidId(noticeId)
         && isValidDailyNotice(incoming(), noticeId)
-        && incoming().diff(existing()).affectedKeys().hasOnly(['activeDate', 'recipientName', 'senderName', 'message', 'isActive', 'updatedBy', 'updatedAt'])
+        && incoming().diff(existing()).affectedKeys().hasOnly(['activeDate', 'recipientName', 'senderName', 'message', 'photoDataUrl', 'isActive', 'updatedBy', 'updatedAt'])
         && incoming().type == existing().type
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time;
@@ -511,7 +530,7 @@ service cloud.firestore {
       allow update: if isAdmin()
         && isValidId(slotId)
         && isValidScheduledNotice(incoming(), slotId)
-        && incoming().diff(existing()).affectedKeys().hasOnly(['recipientName', 'senderName', 'message', 'isActive', 'activateAt', 'expireAt', 'updatedBy', 'updatedAt'])
+        && incoming().diff(existing()).affectedKeys().hasOnly(['recipientName', 'senderName', 'message', 'photoDataUrl', 'isActive', 'activateAt', 'expireAt', 'updatedBy', 'updatedAt'])
         && incoming().type == existing().type
         && incoming().targetDate == existing().targetDate
         && incoming().createdAt == existing().createdAt

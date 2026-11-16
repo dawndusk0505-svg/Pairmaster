@@ -99,6 +99,21 @@ function sanitizeId(val: string | undefined | null, maxLen: number, fallback: st
   return cleaned;
 }
 
+function sanitizePhotoDataUrl(val: unknown): string | undefined {
+  if (typeof val !== 'string') return undefined;
+  const trimmed = val.trim();
+  if (
+    trimmed.length >= 30 &&
+    trimmed.length <= 250000 &&
+    (trimmed.startsWith('data:image/jpeg;base64,') ||
+      trimmed.startsWith('data:image/png;base64,') ||
+      trimmed.startsWith('data:image/webp;base64,'))
+  ) {
+    return trimmed;
+  }
+  return undefined;
+}
+
 export interface CloudUserScore {
   id: string;
   userId: string;
@@ -148,6 +163,7 @@ export interface DailyNotice {
   recipientName: string;
   senderName: string;
   message: string;
+  photoDataUrl?: string;
   isActive: boolean;
 }
 
@@ -164,6 +180,7 @@ export interface NoticeRequestRecord {
   recipientName: string;
   senderName: string;
   message: string;
+  photoDataUrl?: string;
   contactNote?: string;
   status: 'pending' | 'approved' | 'rejected';
   createdAtMs: number;
@@ -177,6 +194,7 @@ export interface ScheduledNoticeRecord {
   recipientName: string;
   senderName: string;
   message: string;
+  photoDataUrl?: string;
   isActive: boolean;
 }
 
@@ -186,6 +204,7 @@ export interface SubmitNoticeRequestInput {
   recipientName: string;
   senderName: string;
   message: string;
+  photoDataUrl?: string;
   contactNote?: string;
 }
 
@@ -194,6 +213,7 @@ interface SaveDailyNoticeInput {
   recipientName: string;
   senderName: string;
   message: string;
+  photoDataUrl?: string;
 }
 
 interface SaveGameScoreInput {
@@ -453,6 +473,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               recipientName: String(data.recipientName ?? ''),
               senderName: String(data.senderName ?? ''),
               message: String(data.message ?? ''),
+              photoDataUrl: sanitizePhotoDataUrl(data.photoDataUrl),
               isActive: Boolean(data.isActive),
             });
           }
@@ -580,6 +601,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               recipientName: String(data.recipientName ?? ''),
               senderName: String(data.senderName ?? ''),
               message: String(data.message ?? ''),
+              photoDataUrl: sanitizePhotoDataUrl(data.photoDataUrl),
               isActive: true,
             };
             if (noticeType === 'birthday') setTodayScheduledBirthday(parsed);
@@ -630,6 +652,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             recipientName: String(data.recipientName ?? ''),
             senderName: String(data.senderName ?? ''),
             message: String(data.message ?? ''),
+            photoDataUrl: sanitizePhotoDataUrl(data.photoDataUrl),
             contactNote: typeof data.contactNote === 'string' ? data.contactNote : undefined,
             status:
               data.status === 'approved' || data.status === 'rejected' ? data.status : 'pending',
@@ -701,6 +724,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             recipientName: String(data.recipientName ?? ''),
             senderName: String(data.senderName ?? ''),
             message: String(data.message ?? ''),
+            photoDataUrl: sanitizePhotoDataUrl(data.photoDataUrl),
             contactNote: typeof data.contactNote === 'string' ? data.contactNote : undefined,
             status: 'pending',
             createdAtMs:
@@ -733,6 +757,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             recipientName: String(data.recipientName ?? ''),
             senderName: String(data.senderName ?? ''),
             message: String(data.message ?? ''),
+            photoDataUrl: sanitizePhotoDataUrl(data.photoDataUrl),
             isActive: Boolean(data.isActive),
           };
         });
@@ -1201,10 +1226,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       recipientName: string;
       senderName: string;
       message: string;
+      photoDataUrl?: string;
       adminUid: string;
     }) => {
       const slotId = `${params.type}_${params.targetDate}`;
       const { activateAt, expireAt } = getHongKongDayTimestamps(params.targetDate);
+      const safePhoto = sanitizePhotoDataUrl(params.photoDataUrl);
 
       // 1. Upsert scheduledNotices/{slotId}
       const schedPath = `scheduledNotices/${slotId}`;
@@ -1218,7 +1245,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       if (!existingSchedSnap?.exists()) {
         try {
-          await setDoc(schedRef, {
+          const payload: Record<string, unknown> = {
             type: params.type,
             targetDate: params.targetDate,
             recipientName: params.recipientName,
@@ -1230,7 +1257,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             updatedBy: params.adminUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-          });
+          };
+          if (safePhoto) payload.photoDataUrl = safePhoto;
+          await setDoc(schedRef, payload);
         } catch (err) {
           handleFirestoreError(err, OperationType.CREATE, schedPath);
         }
@@ -1240,6 +1269,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             recipientName: params.recipientName,
             senderName: params.senderName,
             message: params.message,
+            photoDataUrl: safePhoto ?? '',
             isActive: true,
             activateAt,
             expireAt,
@@ -1291,11 +1321,13 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       recipientName: string;
       senderName: string;
       message: string;
+      photoDataUrl?: string;
       adminUid: string;
     }) => {
       const noticeId = params.type === 'confession' ? 'confession' : 'birthday';
       const path = `dailyNotices/${noticeId}`;
       const noticeRef = doc(db, 'dailyNotices', noticeId);
+      const safePhoto = sanitizePhotoDataUrl(params.photoDataUrl);
 
       let existingSnap;
       try {
@@ -1306,7 +1338,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       if (!existingSnap?.exists()) {
         try {
-          await setDoc(noticeRef, {
+          const payload: Record<string, unknown> = {
             type: noticeId,
             activeDate: params.activeDate,
             recipientName: params.recipientName,
@@ -1316,7 +1348,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             updatedBy: params.adminUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-          });
+          };
+          if (safePhoto) payload.photoDataUrl = safePhoto;
+          await setDoc(noticeRef, payload);
         } catch (err) {
           handleFirestoreError(err, OperationType.CREATE, path);
         }
@@ -1327,6 +1361,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             recipientName: params.recipientName,
             senderName: params.senderName,
             message: params.message,
+            photoDataUrl: safePhoto ?? '',
             isActive: true,
             updatedBy: params.adminUid,
             updatedAt: serverTimestamp(),
@@ -1352,6 +1387,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         noticeId === 'confession' ? ANONYMOUS_DISPLAY_NAME : '神秘祝福者'
       );
       const message = clampString(input.message, 10000, '祝你每日開心甜甜蜜蜜！');
+      const photoDataUrl = sanitizePhotoDataUrl(input.photoDataUrl);
 
       try {
         await publishDailyNoticeDoc({
@@ -1360,6 +1396,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           recipientName,
           senderName,
           message,
+          photoDataUrl,
           adminUid: user.uid,
         });
         await upsertScheduledAndSlot({
@@ -1368,6 +1405,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           recipientName,
           senderName,
           message,
+          photoDataUrl,
           adminUid: user.uid,
         });
       } catch (err) {
@@ -1463,6 +1501,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const recipientName = clampString(input.recipientName, 40, '今日主角');
       const senderName = clampString(input.senderName, 40, ANONYMOUS_DISPLAY_NAME);
       const message = clampString(input.message, 10000, '祝福你每日開心快樂！');
+      const safePhoto = sanitizePhotoDataUrl(input.photoDataUrl);
       const cleanContact = (input.contactNote ?? '').trim().slice(0, 80);
 
       const reqId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -1478,6 +1517,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         status: 'pending',
         createdAt: serverTimestamp(),
       };
+      if (safePhoto) {
+        payload.photoDataUrl = safePhoto;
+      }
       if (cleanContact) {
         payload.contactNote = cleanContact;
       }
@@ -1507,6 +1549,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const recipientName = clampString(req.recipientName, 40, '今日主角');
       const senderName = clampString(req.senderName, 40, ANONYMOUS_DISPLAY_NAME);
       const message = clampString(req.message, 10000, '祝你幸福快樂！');
+      const photoDataUrl = sanitizePhotoDataUrl(req.photoDataUrl);
       const currentHk = getHongKongDateString();
 
       try {
@@ -1516,6 +1559,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           recipientName,
           senderName,
           message,
+          photoDataUrl,
           adminUid: user.uid,
         });
 
@@ -1526,6 +1570,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             recipientName,
             senderName,
             message,
+            photoDataUrl,
             adminUid: user.uid,
           });
         }

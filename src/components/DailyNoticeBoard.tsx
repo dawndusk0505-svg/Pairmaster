@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Cake,
   HeartHandshake,
@@ -9,6 +9,8 @@ import {
   Pin,
   BellRing,
   CalendarPlus,
+  ZoomIn,
+  X,
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { soundFx } from '../utils/audio';
@@ -42,6 +44,8 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
     isSuperAdmin,
     pendingNoticeRequests,
   } = useFirebase();
+
+  const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; caption: string } | null>(null);
 
   const hasAnyNotice = Boolean(todayBirthdayNotice || todayConfessionNotice);
   const pendingCount = isSuperAdmin ? pendingNoticeRequests.length : 0;
@@ -253,9 +257,43 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                         </span>
                       </div>
 
-                      <p className="bg-white border-2 border-amber-200/80 rounded-2xl p-3.5 text-sm sm:text-[15px] text-slate-800 font-bold leading-relaxed whitespace-pre-wrap break-words shadow-xs">
-                        {todayBirthdayNotice.message}
-                      </p>
+                      {todayBirthdayNotice.photoDataUrl ? (
+                        <div className="flex flex-col sm:flex-row gap-3.5 items-center sm:items-stretch">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundFx.playClick();
+                              setZoomedPhoto({
+                                src: todayBirthdayNotice.photoDataUrl!,
+                                caption: `🎂 祝「${todayBirthdayNotice.recipientName}」生日快樂！`,
+                              });
+                            }}
+                            className="group relative bg-white p-1.5 pb-2 rounded-2xl shadow-lg ring-2 ring-amber-300 hover:ring-rose-400 transition-all shrink-0 cursor-pointer hover:-rotate-1 active:scale-95"
+                            title="點擊放大睇相片"
+                          >
+                            <img
+                              src={todayBirthdayNotice.photoDataUrl}
+                              alt={`${todayBirthdayNotice.recipientName} 生日寫真`}
+                              className="w-36 h-36 sm:w-40 sm:h-40 object-cover rounded-xl"
+                            />
+                            <span className="absolute -top-2 -left-2 px-2 py-0.5 rounded-lg bg-gradient-to-r from-amber-400 to-rose-500 text-white text-[10px] font-black shadow-sm">
+                              👑 主角寫真
+                            </span>
+                            <span className="mt-1.5 flex items-center justify-center gap-1 text-[10px] font-black text-rose-600">
+                              <ZoomIn className="w-3 h-3" />
+                              <span>點擊放大睇全圖</span>
+                            </span>
+                          </button>
+
+                          <p className="flex-1 w-full bg-white border-2 border-amber-200/80 rounded-2xl p-3.5 text-sm sm:text-[15px] text-slate-800 font-bold leading-relaxed whitespace-pre-wrap break-words shadow-xs">
+                            {todayBirthdayNotice.message}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="bg-white border-2 border-amber-200/80 rounded-2xl p-3.5 text-sm sm:text-[15px] text-slate-800 font-bold leading-relaxed whitespace-pre-wrap break-words shadow-xs">
+                          {todayBirthdayNotice.message}
+                        </p>
+                      )}
                     </div>
                   </article>
 
@@ -311,9 +349,43 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                       </span>
                     </div>
 
-                    <p className="bg-white border-2 border-pink-200 rounded-2xl p-3.5 text-sm sm:text-[15px] text-slate-800 font-bold leading-relaxed whitespace-pre-wrap break-words shadow-xs">
-                      {todayConfessionNotice.message}
-                    </p>
+                    {todayConfessionNotice.photoDataUrl ? (
+                      <div className="flex flex-col sm:flex-row gap-3.5 items-center sm:items-stretch">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundFx.playClick();
+                            setZoomedPhoto({
+                              src: todayConfessionNotice.photoDataUrl!,
+                              caption: `💌 致「${todayConfessionNotice.recipientName}」的紀念相片`,
+                            });
+                          }}
+                          className="group relative bg-white p-1.5 pb-2 rounded-2xl shadow-md ring-2 ring-rose-200 hover:ring-pink-400 transition-all shrink-0 cursor-pointer hover:rotate-1 active:scale-95"
+                          title="點擊放大睇相片"
+                        >
+                          <img
+                            src={todayConfessionNotice.photoDataUrl}
+                            alt={`${todayConfessionNotice.recipientName} 紀念相片`}
+                            className="w-32 h-32 sm:w-36 sm:h-36 object-cover rounded-xl"
+                          />
+                          <span className="absolute -top-2 -left-2 px-2 py-0.5 rounded-lg bg-gradient-to-r from-pink-500 to-rose-500 text-white text-[10px] font-black shadow-sm">
+                            💕 紀念相片
+                          </span>
+                          <span className="mt-1.5 flex items-center justify-center gap-1 text-[10px] font-black text-pink-600">
+                            <ZoomIn className="w-3 h-3" />
+                            <span>點擊放大</span>
+                          </span>
+                        </button>
+
+                        <p className="flex-1 w-full bg-white border-2 border-pink-200 rounded-2xl p-3.5 text-sm sm:text-[15px] text-slate-800 font-bold leading-relaxed whitespace-pre-wrap break-words shadow-xs">
+                          {todayConfessionNotice.message}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="bg-white border-2 border-pink-200 rounded-2xl p-3.5 text-sm sm:text-[15px] text-slate-800 font-bold leading-relaxed whitespace-pre-wrap break-words shadow-xs">
+                        {todayConfessionNotice.message}
+                      </p>
+                    )}
                   </div>
                 </article>
               )}
@@ -321,6 +393,38 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
           </div>
         )}
       </div>
+
+      {/* Tap-to-Enlarge Photo Lightbox */}
+      {zoomedPhoto && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setZoomedPhoto(null)}
+          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-w-2xl w-full bg-white rounded-3xl p-3 sm:p-4 shadow-2xl space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2 px-1">
+              <p className="text-sm font-black text-slate-900">{zoomedPhoto.caption}</p>
+              <button
+                type="button"
+                onClick={() => setZoomedPhoto(null)}
+                aria-label="關閉大圖預覽"
+                className="p-1.5 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-pink-50 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <img
+              src={zoomedPhoto.src}
+              alt={zoomedPhoto.caption}
+              className="w-full max-h-[75vh] object-contain rounded-2xl bg-pink-50/40"
+            />
+          </div>
+        </div>
+      )}
     </section>
   );
 };
