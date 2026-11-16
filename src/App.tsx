@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { FlipMatchGame } from './components/FlipMatchGame';
 import { LinkMatchGame } from './components/LinkMatchGame';
@@ -13,7 +13,8 @@ import { NoticeSubmissionModal } from './components/NoticeSubmissionModal';
 import { FirebaseProvider, useFirebase } from './contexts/FirebaseContext';
 import { Sparkles, Grid, Link as LinkIcon, Compass, Heart, Sun, X } from 'lucide-react';
 import { soundFx } from './utils/audio';
-import { MatchTheme } from './data/matchThemes';
+import { MATCH_THEMES, MatchTheme } from './data/matchThemes';
+import { preloadThemeItems } from './utils/imagePreload';
 import matchBannerImg from './assets/images/match_banner_realm_1794493181788.jpg';
 
 function loadSavedCustomTheme(): MatchTheme | null {
@@ -39,6 +40,10 @@ function AppContent() {
   const [submitModalDefaultType, setSubmitModalDefaultType] = useState<'birthday' | 'confession'>('birthday');
   const [leaderboardTab, setLeaderboardTab] = useState<'global' | 'mine'>('global');
   const [localCustomTheme, setLocalCustomTheme] = useState<MatchTheme | null>(loadSavedCustomTheme);
+
+  useEffect(() => {
+    preloadThemeItems(MATCH_THEMES[0].items);
+  }, []);
 
   const openNoticeSubmit = (type: 'birthday' | 'confession' = 'birthday') => {
     setSubmitModalDefaultType(type);

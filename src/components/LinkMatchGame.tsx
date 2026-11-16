@@ -6,6 +6,7 @@ import { CustomThemeModal } from './CustomThemeModal';
 import { soundFx } from '../utils/audio';
 import { Grid, Point, findLinkPath, findAvailablePair } from '../utils/linkPathfinder';
 import { useFirebase } from '../contexts/FirebaseContext';
+import { usePreloadedThemeImages } from '../utils/imagePreload';
 
 interface LinkDifficulty {
   id: 'relaxed' | 'standard';
@@ -120,6 +121,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   const totalCols = innerCols + 2;
 
   const availableThemes = customTheme ? [...MATCH_THEMES, customTheme] : MATCH_THEMES;
+  const { isImageFailed } = usePreloadedThemeImages(selectedTheme.items);
   const cloudHigh = getCloudHighScore('link', difficulty.id, selectedTheme.id);
   const displayedHighScore = Math.max(highScore, cloudHigh);
   const publicStageBest = getPublicStageBest('link', difficulty.id, selectedTheme.id);
@@ -749,15 +751,22 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
                         : 'bg-white border-pink-200/90 hover:border-pink-400 hover:bg-pink-50/50'
                     }`}
                   >
-                    {meta?.imageUrl ? (
+                    {meta?.imageUrl && !isImageFailed(meta.imageUrl) ? (
                       <>
-                        <div className="w-full flex-1 min-h-0 rounded-lg sm:rounded-xl overflow-hidden bg-pink-50">
+                        <div className="relative w-full flex-1 min-h-0 rounded-lg sm:rounded-xl overflow-hidden bg-pink-50 flex items-center justify-center">
+                          <span
+                            aria-hidden="true"
+                            className="absolute inset-0 flex items-center justify-center text-lg sm:text-2xl select-none opacity-80"
+                          >
+                            {meta.symbol}
+                          </span>
                           <img
                             src={meta.imageUrl}
                             alt={meta.name}
-                            decoding="async"
+                            loading="eager"
+                            decoding="sync"
                             referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover"
+                            className="relative z-10 w-full h-full object-cover"
                           />
                         </div>
                         <span

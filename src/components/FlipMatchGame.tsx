@@ -5,6 +5,7 @@ import { MATCH_THEMES, DIFFICULTY_PRESETS, DifficultyConfig, MatchTheme } from '
 import { CustomThemeModal } from './CustomThemeModal';
 import { soundFx } from '../utils/audio';
 import { useFirebase } from '../contexts/FirebaseContext';
+import { usePreloadedThemeImages } from '../utils/imagePreload';
 
 interface CardItem {
   uid: string;
@@ -15,6 +16,8 @@ interface CardItem {
   imageUrl?: string;
   isFlipped: boolean;
   isMatched: boolean;
+  isMismatching?: boolean;
+  isFlippingInward?: boolean;
 }
 
 interface FloatingMatchEmoji {
@@ -86,6 +89,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
   const matchedPairsRef = useRef(0);
 
   const availableThemes = customTheme ? [...MATCH_THEMES, customTheme] : MATCH_THEMES;
+  const { isImageFailed } = usePreloadedThemeImages(selectedTheme.items);
   const cloudHigh = getCloudHighScore('flip', difficulty.id, selectedTheme.id);
   const displayedHighScore = Math.max(highScore, cloudHigh);
   const publicStageBest = getPublicStageBest('flip', difficulty.id, selectedTheme.id);
@@ -370,16 +374,35 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
         soundFx.playMismatch();
         setCombo(1);
 
+        // Phase 1: Futuristic scan pulse on the mismatched pair
+        setCards((prev) =>
+          prev.map((c, i) =>
+            i === firstIdx || i === secondIdx ? { ...c, isMismatching: true } : c
+          )
+        );
+
+        // Phase 2: Flip cards inward in 3D back into the cyber card-back
         scheduleTimeout(() => {
           setCards((prev) =>
             prev.map((c, i) =>
-              i === firstIdx || i === secondIdx ? { ...c, isFlipped: false } : c
+              i === firstIdx || i === secondIdx
+                ? { ...c, isFlipped: false, isMismatching: false, isFlippingInward: true }
+                : c
+            )
+          );
+        }, 560);
+
+        // Phase 3: Finish inward 3D flip and unlock next move cleanly
+        scheduleTimeout(() => {
+          setCards((prev) =>
+            prev.map((c, i) =>
+              i === firstIdx || i === secondIdx ? { ...c, isFlippingInward: false } : c
             )
           );
           flippedIndicesRef.current = [];
           setFlippedIndices([]);
           setIsResolving(false);
-        }, 800);
+        }, 1080);
       }
     }
   };
@@ -424,7 +447,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
       prev.map((c) => {
         if (!c.isMatched) {
           const rep = shuffledUnmatched[uIdx++];
-          return { ...rep, isFlipped: false };
+          return { ...rep, isFlipped: false, isMismatching: false, isFlippingInward: false };
         }
         return c;
       })
@@ -709,6 +732,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
         {cards.map((card, index) => {
           const isFaceUp = card.isFlipped || card.isMatched;
           const isCompactGrid = difficulty.totalCards >= 36;
+          const imgFailed = isImageFailed(card.imageUrl);
 
           return (
             <button
@@ -717,53 +741,86 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
               onClick={() => handleCardClick(index)}
               disabled={card.isMatched}
               aria-label={isFaceUp ? `${card.name}${card.isMatched ? '（已配對）' : ''}` : `未翻開卡片 ${index + 1}`}
-              className={`relative aspect-square rounded-xl sm:rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500 transition-transform duration-150 ${
+              className={`perspective-1000 relative aspect-square rounded-xl sm:rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500 ${
                 card.isMatched
-                  ? 'opacity-80 scale-95 cursor-default'
+                  ? 'opacity-85 cursor-default'
                   : isFaceUp
                   ? 'cursor-default'
-                  : 'cursor-pointer hover:-translate-y-0.5 active:scale-95'
+                  : 'cursor-pointer'
               }`}
             >
-              {!isFaceUp ? (
-                /* Back Face (Lightweight - no backdrop-blur or hidden GPU image layers) */
-                <div className="w-full h-full rounded-xl sm:rounded-3xl border-2 flex flex-col items-center justify-center shadow-sm bg-gradient-to-br from-pink-400 via-rose-300 to-pink-300 border-pink-200">
+              {/* 3D Card Core (always mounted for genuine inward 3D flip without snap) */}
+              <div
+                className={`relative w-full h-full transform-style-3d ${
+                  card.isFlippingInward
+                    ? 'animate-tech-flip-inward'
+                    : `transition-transform duration-400 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                        isFaceUp ? 'rotate-y-180' : 'rotate-y-0'
+                      }`
+                }`}
+              >
+                {/* Back Face: Futuristic Pastel Cyber-Candy Card */}
+                <div
+                  className={`card-face-back backface-hidden absolute inset-0 rounded-xl sm:rounded-3xl border-2 flex flex-col items-center justify-center overflow-hidden shadow-sm bg-gradient-to-br from-pink-400 via-rose-400 to-fuchsia-400 tech-card-grid ${
+                    card.isFlippingInward
+                      ? 'border-cyan-300 ring-2 ring-cyan-300/80 shadow-[0_0_18px_rgba(34,211,238,0.55)]'
+                      : 'border-pink-200/90'
+                  }`}
+                >
+                  {/* Sci-Fi HUD Corner Reticles */}
+                  <span aria-hidden="true" className="absolute top-1.5 left-1.5 w-2 h-2 border-t-2 border-l-2 border-cyan-200/80 rounded-tl-xs" />
+                  <span aria-hidden="true" className="absolute top-1.5 right-1.5 w-2 h-2 border-t-2 border-r-2 border-cyan-200/80 rounded-tr-xs" />
+                  <span aria-hidden="true" className="absolute bottom-1.5 left-1.5 w-2 h-2 border-b-2 border-l-2 border-cyan-200/80 rounded-bl-xs" />
+                  <span aria-hidden="true" className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b-2 border-r-2 border-cyan-200/80 rounded-br-xs" />
+
                   <div
                     className={`${
-                      isCompactGrid ? 'w-6 h-6 sm:w-8 sm:h-8 text-xs sm:text-sm' : 'w-9 h-9 text-base'
-                    } rounded-full bg-white/35 border border-white/60 flex items-center justify-center text-white shadow-inner`}
+                      isCompactGrid ? 'w-6 h-6 sm:w-8 sm:h-8 text-xs sm:text-sm' : 'w-9 h-9 sm:w-10 sm:h-10 text-base'
+                    } rounded-2xl bg-white/25 border border-cyan-100/70 flex items-center justify-center text-white shadow-inner`}
                   >
                     💖
                   </div>
                   <span
                     className={`${
-                      isCompactGrid ? 'hidden sm:block text-[10px]' : 'text-[11px]'
-                    } text-white font-black mt-1 tracking-wider`}
+                      isCompactGrid ? 'hidden sm:block text-[9px]' : 'text-[10px]'
+                    } text-white/95 font-mono font-black mt-1 tracking-widest`}
                   >
-                    PAIR
+                    PAIR·CORE
                   </span>
                 </div>
-              ) : (
-                /* Front Face (Mounted only when face-up to eliminate VRAM bloat in 6x6) */
+
+                {/* Front Face: Spirit Artwork / Emoji + Sci-Fi Scan Overlay on Mismatch */}
                 <div
-                  className={`w-full h-full rounded-xl sm:rounded-3xl border-2 flex flex-col items-center justify-center shadow-md overflow-hidden animate-in zoom-in-95 duration-150 ${
+                  className={`card-face-front backface-hidden absolute inset-0 rounded-xl sm:rounded-3xl border-2 flex flex-col items-center justify-center shadow-md overflow-hidden ${
                     card.isMatched
-                      ? 'bg-rose-50/90 border-pink-400 ring-2 ring-pink-300 text-pink-700'
+                      ? 'bg-rose-50/95 border-pink-400 ring-2 ring-pink-300 text-pink-700'
+                      : card.isMismatching || card.isFlippingInward
+                      ? 'bg-white border-cyan-400 ring-2 ring-cyan-300/90 text-slate-800 shadow-[0_0_18px_rgba(34,211,238,0.45)]'
                       : 'bg-white border-pink-300 text-slate-800'
                   } ${card.imageUrl ? (isCompactGrid ? 'p-1 sm:p-1.5' : 'p-1.5 sm:p-2') : ''}`}
                 >
-                  {card.imageUrl ? (
+                  {card.imageUrl && !imgFailed ? (
                     <>
                       <div className="relative w-full flex-1 min-h-0 rounded-lg sm:rounded-2xl overflow-hidden bg-pink-50 flex items-center justify-center">
+                        {/* Instant Emoji placeholder underneath so card is never blank */}
+                        <span
+                          aria-hidden="true"
+                          className={`absolute inset-0 flex items-center justify-center ${
+                            isCompactGrid ? 'text-lg sm:text-2xl' : 'text-2xl sm:text-3xl'
+                          } select-none opacity-80`}
+                        >
+                          {card.symbol}
+                        </span>
                         <img
                           src={card.imageUrl}
                           alt={card.name}
-                          decoding="async"
+                          loading="eager"
+                          decoding="sync"
                           referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
+                          className="relative z-10 w-full h-full object-cover"
                         />
                         {card.isMatched && (
-                          <div className="absolute inset-0 bg-pink-500/15 flex items-center justify-center">
+                          <div className="absolute inset-0 z-20 bg-pink-500/15 flex items-center justify-center">
                             <span className="text-[10px] sm:text-xs font-black text-white bg-pink-500/90 w-5 h-5 sm:w-6 sm:h-6 rounded-lg flex items-center justify-center shadow-xs">
                               ✓
                             </span>
@@ -797,8 +854,17 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
                       )}
                     </>
                   )}
+
+                  {/* Laser Scanner Sweep during mismatch analysis before inward fold */}
+                  {card.isMismatching && (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-0 top-0 h-1/2 z-30 bg-gradient-to-b from-transparent via-cyan-300/45 to-transparent animate-tech-scan"
+                    />
+                  )}
                 </div>
-              )}
+              </div>
+
               {floatingEmojis
                 .filter((fx) => fx.cardIndex === index)
                 .map((fx) => (
