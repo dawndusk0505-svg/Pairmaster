@@ -111,6 +111,9 @@ function AppContent() {
 
       {/* Main Content Area */}
       <main className="flex-1 pb-14">
+        {/* Pinned Top Notice Board: Birthday Blessing & Confession Board */}
+        <DailyNoticeBoard onOpenAdmin={() => setIsAdminModalOpen(true)} />
+
         {/* Hero Showcase Section with Pastel Pink Theme */}
         <section className="relative overflow-hidden border-b border-pink-100 bg-gradient-to-b from-pink-100/70 via-rose-50/50 to-[#FFF5F8] py-5 sm:py-6 px-4 sm:px-6">
           <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
@@ -240,9 +243,6 @@ function AppContent() {
             </div>
           </div>
         </section>
-
-        {/* Admin-Configured Daily Birthday Blessing & Confession Board */}
-        <DailyNoticeBoard onOpenAdmin={() => setIsAdminModalOpen(true)} />
 
         {/* Dynamic Interactive Mode View */}
         <section id="game-workspace" className="mt-2 scroll-mt-16">

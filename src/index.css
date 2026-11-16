@@ -34,6 +34,68 @@
     animation: floatEmojiRight 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     will-change: transform, opacity;
   }
+  .birthday-rainbow-frame {
+    background: linear-gradient(
+      115deg,
+      #ff3d8b,
+      #fbbf24,
+      #34d399,
+      #38bdf8,
+      #a78bfa,
+      #fb7185,
+      #facc15,
+      #ff3d8b
+    );
+    background-size: 300% 300%;
+    animation:
+      birthdayRainbowFlow 3s linear infinite,
+      birthdayGlowPulse 1.3s ease-in-out infinite alternate;
+    will-change: background-position, box-shadow;
+  }
+  .twinkle-bulb-1 {
+    animation: twinkleBulb 0.85s ease-in-out infinite alternate;
+  }
+  .twinkle-bulb-2 {
+    animation: twinkleBulb 0.85s ease-in-out 0.28s infinite alternate;
+  }
+  .twinkle-bulb-3 {
+    animation: twinkleBulb 0.85s ease-in-out 0.56s infinite alternate;
+  }
+}
+
+@keyframes birthdayRainbowFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes birthdayGlowPulse {
+  0% {
+    box-shadow: 0 0 14px rgba(244, 63, 94, 0.35), 0 0 26px rgba(251, 191, 36, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.45), 0 0 32px rgba(167, 139, 250, 0.35);
+  }
+  100% {
+    box-shadow: 0 0 22px rgba(236, 72, 153, 0.55), 0 0 36px rgba(250, 204, 21, 0.45);
+  }
+}
+
+@keyframes twinkleBulb {
+  0% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
 }
 
 @keyframes floatEmojiLeft {
