@@ -47,6 +47,7 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
   } = useFirebase();
 
   const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; caption: string } | null>(null);
+  const [songState, setSongState] = useState<'idle' | 'waiting_tap' | 'playing' | 'muted_hint'>('idle');
   const hasPlayedBirthdayRef = useRef<string | null>(null);
 
   const hasAnyNotice = Boolean(todayBirthdayNotice || todayConfessionNotice);
@@ -55,6 +56,7 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
   useEffect(() => {
     if (!todayBirthdayNotice) {
       soundFx.stopHappyBirthday();
+      setSongState('idle');
       return;
     }
 
@@ -62,52 +64,90 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
     if (hasPlayedBirthdayRef.current === noticeKey) return;
 
     let cancelled = false;
+    let isTrying = false;
     let removeListeners: (() => void) | null = null;
 
-    const triggerOnce = async () => {
-      if (cancelled || hasPlayedBirthdayRef.current === noticeKey) return;
-      const status = await soundFx.playHappyBirthday();
-      if (cancelled) {
-        soundFx.stopHappyBirthday();
-        return;
-      }
+    const attachGestureFallback = () => {
+      if (cancelled || removeListeners) return;
 
-      if (status === 'played' || status === 'muted') {
-        hasPlayedBirthdayRef.current = noticeKey;
-        return;
-      }
-
-      // Autoplay blocked by browser policy on initial page load: wait for first user tap/key
-      const handleFirstGesture = async (event: Event) => {
-        removeListeners?.();
-        removeListeners = null;
-        if (cancelled || hasPlayedBirthdayRef.current === noticeKey) return;
+      const handleFirstGesture = (event: Event) => {
+        if (cancelled || isTrying || hasPlayedBirthdayRef.current === noticeKey) return;
         const target = event.target instanceof Element ? event.target : null;
         if (target?.closest('[data-birthday-replay="true"]')) {
           return;
         }
-        hasPlayedBirthdayRef.current = noticeKey;
-        await soundFx.playHappyBirthday();
+
+        isTrying = true;
+        // Call playHappyBirthday synchronously in the gesture call stack before any await
+        void soundFx
+          .playHappyBirthday(() => {
+            if (!cancelled) setSongState('idle');
+          })
+          .then((res) => {
+            isTrying = false;
+            if (cancelled) {
+              soundFx.stopHappyBirthday();
+              return;
+            }
+            if (res === 'played') {
+              hasPlayedBirthdayRef.current = noticeKey;
+              setSongState('playing');
+              removeListeners?.();
+              removeListeners = null;
+            } else if (res === 'muted') {
+              hasPlayedBirthdayRef.current = noticeKey;
+              setSongState('idle');
+              removeListeners?.();
+              removeListeners = null;
+            }
+            // If still 'blocked' (e.g. a scroll drag rather than a tap), keep listeners active!
+          });
       };
 
       const opts: AddEventListenerOptions = { capture: true, passive: true };
-      window.addEventListener('pointerdown', handleFirstGesture, opts);
-      window.addEventListener('touchstart', handleFirstGesture, opts);
+      window.addEventListener('touchend', handleFirstGesture, opts);
+      window.addEventListener('click', handleFirstGesture, opts);
       window.addEventListener('keydown', handleFirstGesture, { capture: true });
 
       removeListeners = () => {
-        window.removeEventListener('pointerdown', handleFirstGesture, { capture: true });
-        window.removeEventListener('touchstart', handleFirstGesture, { capture: true });
+        window.removeEventListener('touchend', handleFirstGesture, { capture: true });
+        window.removeEventListener('click', handleFirstGesture, { capture: true });
         window.removeEventListener('keydown', handleFirstGesture, { capture: true });
       };
     };
 
-    void triggerOnce();
+    const triggerInitialAutoplay = () => {
+      if (cancelled || hasPlayedBirthdayRef.current === noticeKey) return;
+      void soundFx
+        .playHappyBirthday(() => {
+          if (!cancelled) setSongState('idle');
+        })
+        .then((status) => {
+          if (cancelled) {
+            soundFx.stopHappyBirthday();
+            return;
+          }
+          if (status === 'played') {
+            hasPlayedBirthdayRef.current = noticeKey;
+            setSongState('playing');
+          } else if (status === 'muted') {
+            hasPlayedBirthdayRef.current = noticeKey;
+            setSongState('idle');
+          } else {
+            setSongState('waiting_tap');
+            attachGestureFallback();
+          }
+        });
+    };
+
+    triggerInitialAutoplay();
 
     return () => {
       cancelled = true;
       removeListeners?.();
+      removeListeners = null;
       soundFx.stopHappyBirthday();
+      setSongState('idle');
     };
   }, [todayBirthdayNotice]);
 
@@ -300,24 +340,9 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            data-birthday-replay="true"
-                            onClick={() => {
-                              hasPlayedBirthdayRef.current = `${todayBirthdayNotice.activeDate}_${todayBirthdayNotice.recipientName}`;
-                              void soundFx.playHappyBirthday();
-                            }}
-                            className="px-2.5 py-1 text-[11px] font-black text-rose-700 bg-white/95 hover:bg-rose-50 border border-rose-200 rounded-xl shadow-xs flex items-center gap-1 cursor-pointer transition-transform active:scale-95"
-                            title="播放生日快樂歌"
-                          >
-                            <Music className="w-3.5 h-3.5 text-rose-500" />
-                            <span>播生日歌</span>
-                          </button>
-                          <span className="text-xl select-none" aria-hidden="true">
-                            🎈✨🎁
-                          </span>
-                        </div>
+                        <span className="text-xl select-none" aria-hidden="true">
+                          🎈✨🎁
+                        </span>
                       </div>
 
                       {/* Birthday VIP Superstar Spotlight */}
@@ -370,6 +395,77 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                           {todayBirthdayNotice.message}
                         </p>
                       )}
+                    </div>
+
+                    {/* Built-in Birthday Song Player Bar (only inside active Birthday Post) */}
+                    <div className="bg-gradient-to-r from-amber-100/90 via-rose-100/80 to-pink-100/90 border border-amber-200 rounded-2xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className={`w-7 h-7 rounded-xl bg-white text-rose-500 flex items-center justify-center shadow-xs shrink-0 ${
+                            songState === 'playing' ? 'animate-bounce' : ''
+                          }`}
+                        >
+                          <Music className="w-4 h-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-rose-800 truncate">
+                            🎶 今日壽星專屬生日歌 · Happy Birthday
+                          </p>
+                          <p className="text-[10px] font-bold text-rose-600/90">
+                            {songState === 'playing'
+                              ? '正在為壽星播放生日快樂歌⋯'
+                              : songState === 'waiting_tap'
+                              ? '瀏覽器阻擋自動出聲，輕觸畫面任何位置或右方掣即播'
+                              : songState === 'muted_hint'
+                              ? '目前已設為靜音，請先開啟右上角喇叭'
+                              : '每次進入版面自動播放一次，亦可隨時重播'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        data-birthday-replay="true"
+                        onClick={() => {
+                          const noticeKey = `${todayBirthdayNotice.activeDate}_${todayBirthdayNotice.recipientName}`;
+                          void soundFx
+                            .playHappyBirthday(() => setSongState('idle'))
+                            .then((res) => {
+                              if (res === 'played') {
+                                hasPlayedBirthdayRef.current = noticeKey;
+                                setSongState('playing');
+                              } else if (res === 'muted') {
+                                setSongState('muted_hint');
+                                window.setTimeout(() => {
+                                  setSongState((prev) => (prev === 'muted_hint' ? 'idle' : prev));
+                                }, 2500);
+                              } else {
+                                setSongState('waiting_tap');
+                              }
+                            });
+                        }}
+                        className={`px-3 py-1.5 text-xs font-black rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 border shrink-0 ${
+                          songState === 'playing'
+                            ? 'text-white bg-gradient-to-r from-rose-500 to-pink-500 border-rose-400 shadow-rose-200'
+                            : songState === 'waiting_tap'
+                            ? 'text-white bg-gradient-to-r from-amber-500 to-rose-500 border-amber-400 animate-pulse'
+                            : songState === 'muted_hint'
+                            ? 'text-slate-700 bg-white border-slate-300'
+                            : 'text-rose-700 bg-white hover:bg-rose-50 border-rose-200'
+                        }`}
+                        title="播放生日快樂歌"
+                      >
+                        <Music className="w-3.5 h-3.5" />
+                        <span>
+                          {songState === 'playing'
+                            ? '播放中 ♫'
+                            : songState === 'waiting_tap'
+                            ? '點一下播生日歌'
+                            : songState === 'muted_hint'
+                            ? '靜音中'
+                            : '播放生日歌'}
+                        </span>
+                      </button>
                     </div>
                   </article>
 

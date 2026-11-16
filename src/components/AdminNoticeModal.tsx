@@ -17,6 +17,7 @@ import {
   XCircle,
   Award,
   Camera,
+  Music,
 } from 'lucide-react';
 import {
   ANONYMOUS_DISPLAY_NAME,
@@ -86,6 +87,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [busyReqId, setBusyReqId] = useState<string | null>(null);
+  const [isPreviewingSong, setIsPreviewingSong] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [msLeft, setMsLeft] = useState<number>(() => getMsUntilHongKongMidnight());
 
@@ -109,7 +111,13 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
   }, [isOpen, isAdmin]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      if (isPreviewingSong) {
+        soundFx.stopHappyBirthday();
+        setIsPreviewingSong(false);
+      }
+      return;
+    }
     setFeedback(null);
     if (activeTab === 'birthday') {
       setRecipientName(todayBirthdayNotice?.recipientName ?? '');
@@ -725,28 +733,63 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundFx.playClick();
-                    if (activeTab === 'birthday') {
-                      setRecipientName('Fish');
-                      setSenderName('糖果王國好友團');
-                      setMessage(
-                        '祝今日全場主角 Fish 生日快樂！🎂✨ 願你日日都咁甜美開心，翻牌連擊場場破紀錄、心想事成！🎈💖'
-                      );
-                    } else {
-                      setRecipientName('成日同我一齊玩配對嘅你');
-                      setSenderName(ANONYMOUS_DISPLAY_NAME);
-                      setMessage(
-                        '其實每次同你測 MBTI 同星座合盤我都偷偷 cap 低咗圖，今日終於鼓起勇氣講一句：好鍾意同你一齊玩嘅感覺 💕🌹'
-                      );
-                    }
-                  }}
-                  className="w-full py-1.5 px-3 text-[11px] font-black text-pink-700 bg-white hover:bg-pink-100 border border-pink-200 rounded-xl transition-colors cursor-pointer"
-                >
-                  ✨ 一鍵填入{activeTab === 'birthday' ? '「生日祝福」' : '「浪漫表白」'}示範例子（方便截圖宣傳）
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      if (activeTab === 'birthday') {
+                        setRecipientName('Fish');
+                        setSenderName('糖果王國好友團');
+                        setMessage(
+                          '祝今日全場主角 Fish 生日快樂！🎂✨ 願你日日都咁甜美開心，翻牌連擊場場破紀錄、心想事成！🎈💖'
+                        );
+                      } else {
+                        setRecipientName('成日同我一齊玩配對嘅你');
+                        setSenderName(ANONYMOUS_DISPLAY_NAME);
+                        setMessage(
+                          '其實每次同你測 MBTI 同星座合盤我都偷偷 cap 低咗圖，今日終於鼓起勇氣講一句：好鍾意同你一齊玩嘅感覺 💕🌹'
+                        );
+                      }
+                    }}
+                    className="flex-1 py-1.5 px-3 text-[11px] font-black text-pink-700 bg-white hover:bg-pink-100 border border-pink-200 rounded-xl transition-colors cursor-pointer"
+                  >
+                    ✨ 一鍵填入{activeTab === 'birthday' ? '「生日祝福」' : '「浪漫表白」'}示範例子
+                  </button>
+
+                  {activeTab === 'birthday' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isPreviewingSong) {
+                          soundFx.stopHappyBirthday();
+                          setIsPreviewingSong(false);
+                          return;
+                        }
+                        void soundFx
+                          .playHappyBirthday(() => setIsPreviewingSong(false))
+                          .then((res) => {
+                            if (res === 'played') {
+                              setIsPreviewingSong(true);
+                            } else if (res === 'muted') {
+                              setFeedback({
+                                type: 'err',
+                                text: '目前音效設為靜音，請先點右上角喇叭圖示解除靜音再試聽。',
+                              });
+                            }
+                          });
+                      }}
+                      className={`py-1.5 px-3 text-[11px] font-black rounded-xl border transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
+                        isPreviewingSong
+                          ? 'text-white bg-rose-500 border-rose-500'
+                          : 'text-amber-800 bg-amber-100 hover:bg-amber-200 border-amber-300'
+                      }`}
+                    >
+                      <Music className="w-3.5 h-3.5" />
+                      <span>{isPreviewingSong ? '停止試聽' : '試聽生日歌'}</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>

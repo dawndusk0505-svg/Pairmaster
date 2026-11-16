@@ -146,8 +146,7 @@ function AppContent() {
                 探索每一種甜蜜的{' '}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-rose-500 to-pink-400">
                   心靈配對
-                </span>{' '}
-                🌸
+                </span>
               </h1>
 
               <p className="text-sm sm:text-base text-slate-600 max-w-xl leading-relaxed text-balance font-medium">
