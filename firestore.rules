@@ -29,12 +29,12 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
-      return isVerifiedUser() && request.auth.token.email == 'yui1218.CC@gmail.com';
+      return isVerifiedUser() && request.auth.token.email.lower() == 'yui1218.cc@gmail.com';
     }
 
     function isAdmin() {
       return isVerifiedUser() && (
-        request.auth.token.email == 'yui1218.CC@gmail.com'
+        request.auth.token.email.lower() == 'yui1218.cc@gmail.com'
         || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }

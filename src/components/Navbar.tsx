@@ -95,7 +95,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="p-1.5 sm:px-2.5 sm:py-1.5 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-black"
             >
               <ShieldCheck className="w-4 h-4 text-rose-500" />
-              <span className="hidden md:inline">管理員</span>
+              <span className="hidden sm:inline">管理員</span>
             </button>
           )}
           {onOpenLeaderboard && (

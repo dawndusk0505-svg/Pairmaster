@@ -33,8 +33,12 @@ import { CompatibilityResult } from '../utils/compatibilityCalc';
 // Constants synchronized verbatim with firebase-blueprint.json & firestore.rules
 const ID_REGEX = /^[a-zA-Z0-9_\-]+$/;
 const MBTI_REGEX = /^[EI][SN][TF][JP]$/;
-export const SUPER_ADMIN_EMAIL = 'yui1218.CC@gmail.com';
+export const SUPER_ADMIN_EMAIL = 'yui1218.cc@gmail.com';
 export const ANONYMOUS_DISPLAY_NAME = '唔知邊個(unknown)';
+
+function isSuperAdminEmail(email: string | null | undefined): boolean {
+  return (email ?? '').trim().toLowerCase() === SUPER_ADMIN_EMAIL;
+}
 
 export function getHongKongDateString(date: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -450,7 +454,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsAdmin(false);
         setAdminUsers([]);
       } else {
-        if (currentUser.email === SUPER_ADMIN_EMAIL) {
+        if (isSuperAdminEmail(currentUser.email)) {
           setIsAdmin(true);
         } else {
           getDoc(doc(db, 'admins', currentUser.uid))
@@ -468,7 +472,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Super Admin listener for delegated admin UIDs
   useEffect(() => {
     if (!authReady || !user || user.isAnonymous || !user.emailVerified) return;
-    if (user.email !== SUPER_ADMIN_EMAIL) {
+    if (!isSuperAdminEmail(user.email)) {
       setAdminUsers([]);
       return;
     }
@@ -1018,7 +1022,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const addAuthorizedAdmin = useCallback(
     async (targetUid: string, note: string) => {
-      if (!user || user.isAnonymous || !user.emailVerified || user.email !== SUPER_ADMIN_EMAIL) {
+      if (!user || user.isAnonymous || !user.emailVerified || !isSuperAdminEmail(user.email)) {
         return;
       }
       const safeUid = sanitizeId(targetUid, 128, '');
@@ -1044,7 +1048,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const removeAuthorizedAdmin = useCallback(
     async (targetUid: string) => {
-      if (!user || user.isAnonymous || !user.emailVerified || user.email !== SUPER_ADMIN_EMAIL) {
+      if (!user || user.isAnonymous || !user.emailVerified || !isSuperAdminEmail(user.email)) {
         return;
       }
       const safeUid = sanitizeId(targetUid, 128, '');
@@ -1064,7 +1068,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 
   const isVerifiedGoogleUser = Boolean(user && !user.isAnonymous && user.emailVerified);
-  const isSuperAdmin = Boolean(isVerifiedGoogleUser && user?.email === SUPER_ADMIN_EMAIL);
+  const isSuperAdmin = Boolean(isVerifiedGoogleUser && isSuperAdminEmail(user?.email));
 
   const todayBirthdayNotice =
     rawNotices.find((n) => n.type === 'birthday' && n.isActive && n.activeDate === todayHkDate) ??
