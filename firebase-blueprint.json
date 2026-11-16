@@ -281,6 +281,89 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "DailyNotice": {
+      "title": "DailyNotice",
+      "description": "Admin-managed daily single-slot Birthday Blessing or Confession Board entry that expires at midnight.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["birthday", "confession"]
+        },
+        "activeDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "recipientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "type",
+        "activeDate",
+        "recipientName",
+        "senderName",
+        "message",
+        "isActive",
+        "updatedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized admin UID registry managed by the super admin.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "note", "createdAt"]
     }
   },
   "firestore": {
@@ -303,6 +386,14 @@
     "/leaderboard/{entryId}": {
       "schema": { "$ref": "#/entities/LeaderboardEntry" },
       "description": "Public high-score Hall of Fame across players (no PII)."
+    },
+    "/dailyNotices/{noticeId}": {
+      "schema": { "$ref": "#/entities/DailyNotice" },
+      "description": "Daily single-slot Birthday Blessing ('birthday') and Confession Board ('confession') managed only by admins."
+    },
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Registry of additional authorized admin UIDs."
     }
   }
 }

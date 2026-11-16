@@ -28,9 +28,20 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous';
     }
 
+    function isSuperAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'yui1218.CC@gmail.com';
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'yui1218.CC@gmail.com'
+        || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
     function canWriteLeaderboard(data) {
       return isVerifiedUser()
-        || (isAnonymousUser() && data.displayName == '匿名玩家');
+        || (isAnonymousUser() && data.displayName == '唔知邊個(unknown)');
     }
 
     function isOwner(userId) {
@@ -205,6 +216,43 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
+    function isValidDailyNotice(data, noticeId) {
+      return noticeId in ['birthday', 'confession']
+        && data.keys().hasAll(['type', 'activeDate', 'recipientName', 'senderName', 'message', 'isActive', 'updatedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['type', 'activeDate', 'recipientName', 'senderName', 'message', 'isActive', 'updatedBy', 'createdAt', 'updatedAt'])
+        && data.type == noticeId
+        && data.activeDate is string
+        && data.activeDate.size() == 10
+        && data.activeDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && data.recipientName is string
+        && data.recipientName.size() >= 1
+        && data.recipientName.size() <= 40
+        && data.senderName is string
+        && data.senderName.size() >= 1
+        && data.senderName.size() <= 40
+        && data.message is string
+        && data.message.size() >= 1
+        && data.message.size() <= 300
+        && data.isActive is bool
+        && data.updatedBy is string
+        && isValidId(data.updatedBy)
+        && data.updatedBy == request.auth.uid
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminUser(data, adminUid) {
+      return data.keys().hasAll(['uid', 'note', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'note', 'createdAt'])
+        && data.uid is string
+        && isValidId(data.uid)
+        && data.uid == adminUid
+        && data.note is string
+        && data.note.size() >= 1
+        && data.note.size() <= 60
+        && data.createdAt is timestamp;
+    }
+
     // 4. Collection Match Blocks
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
@@ -309,6 +357,35 @@ service cloud.firestore {
       allow delete: if isVerifiedUser()
         && isValidId(entryId)
         && existing().userId == request.auth.uid;
+    }
+
+    match /dailyNotices/{noticeId} {
+      allow get: if isValidId(noticeId) && (isAdmin() || resource.data.isActive == true);
+      allow list: if resource.data.isActive == true;
+      allow create: if isAdmin()
+        && isValidId(noticeId)
+        && isValidDailyNotice(incoming(), noticeId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(noticeId)
+        && isValidDailyNotice(incoming(), noticeId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['activeDate', 'recipientName', 'senderName', 'message', 'isActive', 'updatedBy', 'updatedAt'])
+        && incoming().type == existing().type
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(noticeId);
+    }
+
+    match /admins/{adminUid} {
+      allow get: if isOwner(adminUid) && isValidId(adminUid);
+      allow list: if isSuperAdmin() && resource.data.uid > '';
+      allow create: if isSuperAdmin()
+        && isValidId(adminUid)
+        && isValidAdminUser(incoming(), adminUid)
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isSuperAdmin() && isValidId(adminUid);
     }
   }
 }

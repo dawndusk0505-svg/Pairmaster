@@ -33,6 +33,34 @@ import { CompatibilityResult } from '../utils/compatibilityCalc';
 // Constants synchronized verbatim with firebase-blueprint.json & firestore.rules
 const ID_REGEX = /^[a-zA-Z0-9_\-]+$/;
 const MBTI_REGEX = /^[EI][SN][TF][JP]$/;
+export const SUPER_ADMIN_EMAIL = 'yui1218.CC@gmail.com';
+export const ANONYMOUS_DISPLAY_NAME = '唔知邊個(unknown)';
+
+export function getHongKongDateString(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Hong_Kong',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+export function getMsUntilHongKongMidnight(now: Date = new Date()): number {
+  const hkParts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Hong_Kong',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+
+  const hour = Number(hkParts.find((p) => p.type === 'hour')?.value ?? 0) % 24;
+  const minute = Number(hkParts.find((p) => p.type === 'minute')?.value ?? 0);
+  const second = Number(hkParts.find((p) => p.type === 'second')?.value ?? 0);
+
+  const elapsedSec = hour * 3600 + minute * 60 + second;
+  return Math.max(1000, (86400 - elapsedSec) * 1000);
+}
 
 function clampString(val: string | undefined | null, maxLen: number, fallback: string): string {
   const trimmed = (val ?? '').trim();
@@ -88,6 +116,28 @@ export interface CloudLeaderboardEntry {
   isPublic: boolean;
 }
 
+export interface DailyNotice {
+  id: 'birthday' | 'confession';
+  type: 'birthday' | 'confession';
+  activeDate: string;
+  recipientName: string;
+  senderName: string;
+  message: string;
+  isActive: boolean;
+}
+
+export interface AdminUserRecord {
+  uid: string;
+  note: string;
+}
+
+interface SaveDailyNoticeInput {
+  type: 'birthday' | 'confession';
+  recipientName: string;
+  senderName: string;
+  message: string;
+}
+
 interface SaveGameScoreInput {
   gameMode: 'flip' | 'link';
   themeId: string;
@@ -102,6 +152,8 @@ interface SaveGameScoreInput {
 interface FirebaseContextValue {
   user: User | null;
   isVerifiedGoogleUser: boolean;
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
   authReady: boolean;
   isAuthBusy: boolean;
   cloudError: string | null;
@@ -119,6 +171,14 @@ interface FirebaseContextValue {
     relationType: 'love' | 'friend' | 'work' | 'creative'
   ) => Promise<void>;
   deleteCompatibilityLog: (logId: string) => Promise<void>;
+  todayHkDate: string;
+  todayBirthdayNotice: DailyNotice | null;
+  todayConfessionNotice: DailyNotice | null;
+  saveDailyNotice: (input: SaveDailyNoticeInput) => Promise<void>;
+  clearDailyNotice: (type: 'birthday' | 'confession') => Promise<void>;
+  adminUsers: AdminUserRecord[];
+  addAuthorizedAdmin: (uid: string, note: string) => Promise<void>;
+  removeAuthorizedAdmin: (uid: string) => Promise<void>;
 }
 
 const FirebaseContext = createContext<FirebaseContextValue | null>(null);
@@ -187,6 +247,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [scoresMap, setScoresMap] = useState<Record<string, CloudUserScore>>({});
   const [cloudCustomTheme, setCloudCustomTheme] = useState<MatchTheme | null>(null);
   const [compatibilityLogs, setCompatibilityLogs] = useState<CloudCompatibilityLog[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
+  const [rawNotices, setRawNotices] = useState<DailyNotice[]>([]);
+  const [todayHkDate, setTodayHkDate] = useState<string>(() => getHongKongDateString());
 
   const profileEnsuredUidRef = useRef<string | null>(null);
   const inFlightProfileRef = useRef<{ uid: string; promise: Promise<void> } | null>(null);
@@ -264,6 +328,59 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   useEffect(() => {
+    const syncDate = () => {
+      const next = getHongKongDateString();
+      setTodayHkDate((prev) => (prev !== next ? next : prev));
+    };
+    const intervalId = setInterval(syncDate, 15000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') syncDate();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', syncDate);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', syncDate);
+    };
+  }, []);
+
+  // Public listener for daily Birthday Blessing & Confession Board (auto-filtered by todayHkDate)
+  useEffect(() => {
+    const noticesPath = 'dailyNotices';
+    const noticesQuery = query(
+      collection(db, noticesPath),
+      where('isActive', '==', true),
+      limit(5)
+    );
+    const unsub = onSnapshot(
+      noticesQuery,
+      (snapshot) => {
+        const list: DailyNotice[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data();
+          if (data.type === 'birthday' || data.type === 'confession') {
+            list.push({
+              id: data.type,
+              type: data.type,
+              activeDate: String(data.activeDate ?? ''),
+              recipientName: String(data.recipientName ?? ''),
+              senderName: String(data.senderName ?? ''),
+              message: String(data.message ?? ''),
+              isActive: Boolean(data.isActive),
+            });
+          }
+        });
+        setRawNotices(list);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, noticesPath);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthReady(true);
@@ -273,7 +390,16 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setScoresMap({});
         setCloudCustomTheme(null);
         setCompatibilityLogs([]);
+        setIsAdmin(false);
+        setAdminUsers([]);
       } else {
+        if (currentUser.email === SUPER_ADMIN_EMAIL) {
+          setIsAdmin(true);
+        } else {
+          getDoc(doc(db, 'admins', currentUser.uid))
+            .then((snap) => setIsAdmin(snap.exists()))
+            .catch(() => setIsAdmin(false));
+        }
         ensureUserProfile(currentUser).catch((err) => {
           reportFriendlyError(err);
         });
@@ -281,6 +407,32 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
     return () => unsub();
   }, [ensureUserProfile, reportFriendlyError]);
+
+  // Super Admin listener for delegated admin UIDs
+  useEffect(() => {
+    if (!authReady || !user || user.isAnonymous || !user.emailVerified) return;
+    if (user.email !== SUPER_ADMIN_EMAIL) {
+      setAdminUsers([]);
+      return;
+    }
+
+    const adminsQuery = query(collection(db, 'admins'), where('uid', '>', ''));
+    const unsub = onSnapshot(
+      adminsQuery,
+      (snapshot) => {
+        const list: AdminUserRecord[] = snapshot.docs.map((d) => ({
+          uid: String(d.data().uid ?? d.id),
+          note: String(d.data().note ?? '授權管理員'),
+        }));
+        setAdminUsers(list);
+      },
+      () => {
+        // Non-blocking fallback
+        setAdminUsers([]);
+      }
+    );
+    return () => unsub();
+  }, [authReady, user]);
 
   // Attach Firestore listeners ONLY when auth is ready and user is authenticated & verified
   useEffect(() => {
@@ -467,7 +619,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             : undefined;
         const displayName = isGoogleAccount
           ? clampString(activeUser.displayName, 60, '糖果玩家')
-          : '匿名玩家';
+          : ANONYMOUS_DISPLAY_NAME;
 
         if (isGoogleAccount) {
           await ensureUserProfile(activeUser);
@@ -697,13 +849,152 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [user, reportFriendlyError]
   );
 
+  const saveDailyNotice = useCallback(
+    async (input: SaveDailyNoticeInput) => {
+      if (!user || user.isAnonymous || !user.emailVerified || !isAdmin) return;
+
+      const noticeId = input.type === 'confession' ? 'confession' : 'birthday';
+      const path = `dailyNotices/${noticeId}`;
+      const noticeRef = doc(db, 'dailyNotices', noticeId);
+      const activeDate = getHongKongDateString();
+      const recipientName = clampString(input.recipientName, 40, '今日壽星');
+      const senderName = clampString(
+        input.senderName,
+        40,
+        noticeId === 'confession' ? ANONYMOUS_DISPLAY_NAME : '神秘祝福者'
+      );
+      const message = clampString(input.message, 300, '祝你每日開心甜甜蜜蜜！');
+
+      try {
+        let existingSnap;
+        try {
+          existingSnap = await getDoc(noticeRef);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.GET, path);
+        }
+
+        if (!existingSnap?.exists()) {
+          try {
+            await setDoc(noticeRef, {
+              type: noticeId,
+              activeDate,
+              recipientName,
+              senderName,
+              message,
+              isActive: true,
+              updatedBy: user.uid,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          } catch (err) {
+            handleFirestoreError(err, OperationType.CREATE, path);
+          }
+        } else {
+          try {
+            await updateDoc(noticeRef, {
+              activeDate,
+              recipientName,
+              senderName,
+              message,
+              isActive: true,
+              updatedBy: user.uid,
+              updatedAt: serverTimestamp(),
+            });
+          } catch (err) {
+            handleFirestoreError(err, OperationType.UPDATE, path);
+          }
+        }
+      } catch (err) {
+        reportFriendlyError(err);
+        throw err;
+      }
+    },
+    [user, isAdmin, reportFriendlyError]
+  );
+
+  const clearDailyNotice = useCallback(
+    async (type: 'birthday' | 'confession') => {
+      if (!user || user.isAnonymous || !user.emailVerified || !isAdmin) return;
+      const noticeId = type === 'confession' ? 'confession' : 'birthday';
+      const path = `dailyNotices/${noticeId}`;
+      try {
+        await deleteDoc(doc(db, 'dailyNotices', noticeId));
+      } catch (err) {
+        try {
+          handleFirestoreError(err, OperationType.DELETE, path);
+        } catch (wrapped) {
+          reportFriendlyError(wrapped);
+          throw wrapped;
+        }
+      }
+    },
+    [user, isAdmin, reportFriendlyError]
+  );
+
+  const addAuthorizedAdmin = useCallback(
+    async (targetUid: string, note: string) => {
+      if (!user || user.isAnonymous || !user.emailVerified || user.email !== SUPER_ADMIN_EMAIL) {
+        return;
+      }
+      const safeUid = sanitizeId(targetUid, 128, '');
+      if (!safeUid) throw new Error('Invalid UID format');
+      const path = `admins/${safeUid}`;
+      try {
+        await setDoc(doc(db, 'admins', safeUid), {
+          uid: safeUid,
+          note: clampString(note, 60, '授權管理員'),
+          createdAt: serverTimestamp(),
+        });
+      } catch (err) {
+        try {
+          handleFirestoreError(err, OperationType.CREATE, path);
+        } catch (wrapped) {
+          reportFriendlyError(wrapped);
+          throw wrapped;
+        }
+      }
+    },
+    [user, reportFriendlyError]
+  );
+
+  const removeAuthorizedAdmin = useCallback(
+    async (targetUid: string) => {
+      if (!user || user.isAnonymous || !user.emailVerified || user.email !== SUPER_ADMIN_EMAIL) {
+        return;
+      }
+      const safeUid = sanitizeId(targetUid, 128, '');
+      if (!safeUid) return;
+      const path = `admins/${safeUid}`;
+      try {
+        await deleteDoc(doc(db, 'admins', safeUid));
+      } catch (err) {
+        try {
+          handleFirestoreError(err, OperationType.DELETE, path);
+        } catch (wrapped) {
+          reportFriendlyError(wrapped);
+        }
+      }
+    },
+    [user, reportFriendlyError]
+  );
+
   const isVerifiedGoogleUser = Boolean(user && !user.isAnonymous && user.emailVerified);
+  const isSuperAdmin = Boolean(isVerifiedGoogleUser && user?.email === SUPER_ADMIN_EMAIL);
+
+  const todayBirthdayNotice =
+    rawNotices.find((n) => n.type === 'birthday' && n.isActive && n.activeDate === todayHkDate) ??
+    null;
+  const todayConfessionNotice =
+    rawNotices.find((n) => n.type === 'confession' && n.isActive && n.activeDate === todayHkDate) ??
+    null;
 
   return (
     <FirebaseContext.Provider
       value={{
         user,
         isVerifiedGoogleUser,
+        isAdmin: isVerifiedGoogleUser && isAdmin,
+        isSuperAdmin,
         authReady,
         isAuthBusy,
         cloudError,
@@ -718,6 +1009,14 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         compatibilityLogs,
         saveCompatibilityLog,
         deleteCompatibilityLog,
+        todayHkDate,
+        todayBirthdayNotice,
+        todayConfessionNotice,
+        saveDailyNotice,
+        clearDailyNotice,
+        adminUsers,
+        addAuthorizedAdmin,
+        removeAuthorizedAdmin,
       }}
     >
       {children}

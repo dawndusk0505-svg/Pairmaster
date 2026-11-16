@@ -770,7 +770,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
                   {syncStatus === 'cloud'
                     ? '已同步儲存至個人雲端與榮譽榜 ✓'
                     : syncStatus === 'anonymous'
-                    ? '已以「匿名玩家」登上全服榮譽榜 ✨'
+                    ? '已以「唔知邊個(unknown)」登上全服榮譽榜 ✨'
                     : '已儲存至本機最高紀錄 ✓'}
                 </span>
               </p>

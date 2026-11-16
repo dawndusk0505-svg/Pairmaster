@@ -7,6 +7,8 @@ import { SwipeMatchSimulator } from './components/SwipeMatchSimulator';
 import { DailyLuckyPair } from './components/DailyLuckyPair';
 import { ShareModal } from './components/ShareModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
+import { DailyNoticeBoard } from './components/DailyNoticeBoard';
+import { AdminNoticeModal } from './components/AdminNoticeModal';
 import { FirebaseProvider, useFirebase } from './contexts/FirebaseContext';
 import { Sparkles, Grid, Link as LinkIcon, Compass, Heart, Sun, X } from 'lucide-react';
 import { soundFx } from './utils/audio';
@@ -31,6 +33,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('flip');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [leaderboardTab, setLeaderboardTab] = useState<'global' | 'mine'>('global');
   const [localCustomTheme, setLocalCustomTheme] = useState<MatchTheme | null>(loadSavedCustomTheme);
 
@@ -65,6 +68,7 @@ function AppContent() {
         onQuickAction={() => handleSelectAndScroll('flip', true)}
         onOpenShare={() => setIsShareModalOpen(true)}
         onOpenLeaderboard={() => openLeaderboard('global')}
+        onOpenAdmin={() => setIsAdminModalOpen(true)}
       />
 
       {/* Cloud Error / Quota Notice Banner */}
@@ -97,6 +101,12 @@ function AppContent() {
         isOpen={isLeaderboardOpen}
         onClose={() => setIsLeaderboardOpen(false)}
         initialTab={leaderboardTab}
+      />
+
+      {/* Admin-Only Daily Notice Settings Modal */}
+      <AdminNoticeModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
       />
 
       {/* Main Content Area */}
@@ -230,6 +240,9 @@ function AppContent() {
             </div>
           </div>
         </section>
+
+        {/* Admin-Configured Daily Birthday Blessing & Confession Board */}
+        <DailyNoticeBoard onOpenAdmin={() => setIsAdminModalOpen(true)} />
 
         {/* Dynamic Interactive Mode View */}
         <section id="game-workspace" className="mt-2 scroll-mt-16">

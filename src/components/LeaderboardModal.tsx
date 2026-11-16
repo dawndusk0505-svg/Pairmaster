@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { X, Trophy, Crown, Clock, Cloud, Sparkles, LogIn, Medal, Smartphone } from 'lucide-react';
+import { X, Trophy, Crown, Clock, Cloud, Sparkles, LogIn, Medal, Smartphone, Copy, Check } from 'lucide-react';
 import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { CloudLeaderboardEntry, useFirebase } from '../contexts/FirebaseContext';
@@ -98,6 +98,18 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   const [entries, setEntries] = useState<CloudLeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filterMode, setFilterMode] = useState<'all' | 'flip' | 'link'>('all');
+  const [copiedUid, setCopiedUid] = useState(false);
+
+  const handleCopyUid = async () => {
+    if (!user?.uid) return;
+    try {
+      await navigator.clipboard.writeText(user.uid);
+      setCopiedUid(true);
+      setTimeout(() => setCopiedUid(false), 2000);
+    } catch {
+      // ignore clipboard failures
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -277,38 +289,61 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         {/* Auth / Personal Summary Strip */}
         <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
           {isVerifiedGoogleUser && user ? (
-            <div className="flex items-center gap-2.5">
-              {user.photoURL ? (
-                <img
-                  src={user.photoURL}
-                  alt={user.displayName || '玩家頭像'}
-                  referrerPolicy="no-referrer"
-                  className="w-9 h-9 rounded-xl border border-pink-300 object-cover"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-xl bg-pink-200 text-pink-700 font-black flex items-center justify-center text-sm">
-                  {(user.displayName || '玩')[0]}
+            <div className="flex items-center justify-between w-full gap-2.5 flex-wrap">
+              <div className="flex items-center gap-2.5">
+                {user.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt={user.displayName || '玩家頭像'}
+                    referrerPolicy="no-referrer"
+                    className="w-9 h-9 rounded-xl border border-pink-300 object-cover"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-xl bg-pink-200 text-pink-700 font-black flex items-center justify-center text-sm">
+                    {(user.displayName || '玩')[0]}
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs font-black text-slate-800">
+                    {user.displayName || '糖果玩家'}
+                  </p>
+                  <p className="text-[11px] font-bold text-pink-600">
+                    已累積 {allPersonalCount} 項關卡最高紀錄（雲端已保存 {Object.keys(scoresMap).length} 項）
+                  </p>
                 </div>
-              )}
-              <div>
-                <p className="text-xs font-black text-slate-800">
-                  {user.displayName || '糖果玩家'}
-                </p>
-                <p className="text-[11px] font-bold text-pink-600">
-                  已累積 {allPersonalCount} 項關卡最高紀錄（雲端已保存 {Object.keys(scoresMap).length} 項）
-                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playClick();
+                  void handleCopyUid();
+                }}
+                title="複製個人帳號 UID（供管理員授權用）"
+                className="px-2.5 py-1.5 text-[11px] font-bold text-slate-600 bg-white hover:text-pink-600 hover:border-pink-300 border border-pink-200 rounded-xl flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                {copiedUid ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-500" />
+                    <span className="text-emerald-600">已複製 UID</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" />
+                    <span>複製 UID</span>
+                  </>
+                )}
+              </button>
             </div>
           ) : (
             <div className="flex items-center justify-between w-full gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-pink-200/80 text-pink-700 font-black flex items-center justify-center text-sm shrink-0">
-                  匿
+                  ？
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-800">匿名玩家</p>
+                  <p className="text-xs font-black text-slate-800">唔知邊個(unknown)</p>
                   <p className="text-[11px] text-slate-600 font-bold leading-snug">
-                    未登入會以「匿名玩家」登上全服榜；登入可同步跨裝置！
+                    未登入會以「唔知邊個(unknown)」登上全服榜；登入可同步跨裝置！
                   </p>
                 </div>
               </div>

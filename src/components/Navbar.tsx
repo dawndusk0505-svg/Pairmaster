@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Volume2, VolumeX, Sparkles, QrCode, Trophy, LogIn, LogOut } from 'lucide-react';
+import { Volume2, VolumeX, Sparkles, QrCode, Trophy, LogIn, LogOut, ShieldCheck } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 import { useFirebase } from '../contexts/FirebaseContext';
 
@@ -11,6 +11,7 @@ interface NavbarProps {
   onQuickAction?: () => void;
   onOpenShare?: () => void;
   onOpenLeaderboard?: () => void;
+  onOpenAdmin?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -19,9 +20,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onQuickAction,
   onOpenShare,
   onOpenLeaderboard,
+  onOpenAdmin,
 }) => {
   const [isMuted, setIsMuted] = useState(soundFx.getIsMuted());
-  const { isVerifiedGoogleUser, user, authReady, isAuthBusy, signInWithGoogle, signOutUser } = useFirebase();
+  const { isVerifiedGoogleUser, isAdmin, user, authReady, isAuthBusy, signInWithGoogle, signOutUser } = useFirebase();
 
   const handleToggleSound = () => {
     const muted = soundFx.toggleMute();
@@ -81,6 +83,21 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Zone 3: Actions */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {isAdmin && onOpenAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                onOpenAdmin();
+              }}
+              title="管理員每日告示設定"
+              aria-label="管理員設定"
+              className="p-1.5 sm:px-2.5 sm:py-1.5 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-black"
+            >
+              <ShieldCheck className="w-4 h-4 text-rose-500" />
+              <span className="hidden md:inline">管理員</span>
+            </button>
+          )}
           {onOpenLeaderboard && (
             <button
               type="button"
