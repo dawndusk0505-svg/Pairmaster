@@ -187,6 +187,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [compatibilityLogs, setCompatibilityLogs] = useState<CloudCompatibilityLog[]>([]);
 
   const profileEnsuredUidRef = useRef<string | null>(null);
+  const inFlightProfileRef = useRef<{ uid: string; promise: Promise<void> } | null>(null);
 
   const clearCloudError = useCallback(() => setCloudError(null), []);
 
@@ -198,6 +199,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // User closed login popup intentionally, no noisy alert needed
     } else if (msg.includes('popup-blocked')) {
       setCloudError('瀏覽器攔截了 Google 登入視窗，請允許彈出視窗後再試一次。');
+    } else if (
+      msg.includes('client is offline') ||
+      msg.includes('unavailable') ||
+      msg.includes('network-request-failed')
+    ) {
+      setCloudError('暫時未能連線到雲端伺服器（請檢查網絡或 VPN 設定），本地記錄仍安全保存。');
     } else {
       setCloudError('雲端同步暫時未能完成，請稍後再試（本地記錄仍安全保存）。');
     }
@@ -206,39 +213,52 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const ensureUserProfile = useCallback(async (currentUser: User) => {
     if (!currentUser.emailVerified) return;
     if (profileEnsuredUidRef.current === currentUser.uid) return;
+    if (inFlightProfileRef.current?.uid === currentUser.uid) {
+      return inFlightProfileRef.current.promise;
+    }
 
-    const path = `users/${currentUser.uid}`;
-    const userRef = doc(db, 'users', currentUser.uid);
-    const displayName = clampString(currentUser.displayName, 60, '糖果玩家');
-    const photoURL = currentUser.photoURL ? currentUser.photoURL.slice(0, 500) : '';
+    const run = (async () => {
+      const path = `users/${currentUser.uid}`;
+      const userRef = doc(db, 'users', currentUser.uid);
+      const displayName = clampString(currentUser.displayName, 60, '糖果玩家');
+      const photoURL = currentUser.photoURL ? currentUser.photoURL.slice(0, 500) : '';
 
-    try {
-      const snap = await getDoc(userRef);
-      if (!snap.exists()) {
-        const payload: Record<string, unknown> = {
-          uid: currentUser.uid,
-          displayName,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        };
-        if (photoURL) payload.photoURL = photoURL;
-
-        await setDoc(userRef, payload);
-      } else {
-        const existing = snap.data();
-        if (existing.displayName !== displayName || (photoURL && existing.photoURL !== photoURL)) {
-          const updates: Record<string, unknown> = {
+      try {
+        const snap = await getDoc(userRef);
+        if (!snap.exists()) {
+          const payload: Record<string, unknown> = {
+            uid: currentUser.uid,
             displayName,
+            createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           };
-          if (photoURL) updates.photoURL = photoURL;
-          await updateDoc(userRef, updates);
+          if (photoURL) payload.photoURL = photoURL;
+
+          await setDoc(userRef, payload);
+        } else {
+          const existing = snap.data();
+          if (existing.displayName !== displayName || (photoURL && existing.photoURL !== photoURL)) {
+            const updates: Record<string, unknown> = {
+              displayName,
+              updatedAt: serverTimestamp(),
+            };
+            if (photoURL) updates.photoURL = photoURL;
+            await updateDoc(userRef, updates);
+          }
+        }
+        profileEnsuredUidRef.current = currentUser.uid;
+        setCloudError(null);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+      } finally {
+        if (inFlightProfileRef.current?.uid === currentUser.uid) {
+          inFlightProfileRef.current = null;
         }
       }
-      profileEnsuredUidRef.current = currentUser.uid;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    }
+    })();
+
+    inFlightProfileRef.current = { uid: currentUser.uid, promise: run };
+    return run;
   }, []);
 
   useEffect(() => {
@@ -247,6 +267,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setAuthReady(true);
       if (!currentUser) {
         profileEnsuredUidRef.current = null;
+        inFlightProfileRef.current = null;
         setScoresMap({});
         setCloudCustomTheme(null);
         setCompatibilityLogs([]);

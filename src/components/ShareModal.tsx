@@ -113,14 +113,14 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, appUrl 
           </div>
 
           <p className="text-xs text-slate-600 leading-relaxed font-bold">
-            你可以免費將上面呢串網址縮成好似 <span className="text-pink-600 font-mono">tinyurl.com/pair-yui</span> 咁簡單嘅網址：
+            你可以免費將上面呢串網址縮成好似 <span className="text-pink-600 font-mono">tinyurl.com/pair-Fish</span> 咁簡單嘅網址：
           </p>
 
           <div className="space-y-2 text-xs">
             <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-pink-200">
               <div>
                 <span className="text-slate-900 font-black block">TinyURL 自訂別名</span>
-                <span className="text-[11px] text-pink-500 font-bold">自訂專屬單字（例如 tinyurl.com/pair-yui）</span>
+                <span className="text-[11px] text-pink-500 font-bold">自訂專屬單字（例如 tinyurl.com/pair-Fish）</span>
               </div>
               <a
                 href={`https://tinyurl.com/create.php?url=${encodeURIComponent(activeUrl)}`}
