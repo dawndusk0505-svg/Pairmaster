@@ -548,6 +548,74 @@
         }
       },
       "required": ["uid", "note", "createdAt"]
+    },
+    "Visitor": {
+      "title": "Visitor",
+      "description": "Unique-per-device website visitor record tracking device tag, latest displayName, visitCount, and timestamps without PII.",
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "lastAuthUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "isSignedInUser": {
+          "type": "boolean"
+        },
+        "deviceLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "deviceType": {
+          "type": "string",
+          "enum": ["mobile", "tablet", "desktop"]
+        },
+        "visitCount": {
+          "type": "number"
+        },
+        "firstSeenAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastSeenAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "deviceId",
+        "lastAuthUid",
+        "displayName",
+        "isSignedInUser",
+        "deviceLabel",
+        "deviceType",
+        "visitCount",
+        "firstSeenAt",
+        "lastSeenAt",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -590,6 +658,10 @@
     "/admins/{adminUid}": {
       "schema": { "$ref": "#/entities/AdminUser" },
       "description": "Registry of additional authorized admin UIDs."
+    },
+    "/visitors/{deviceId}": {
+      "schema": { "$ref": "#/entities/Visitor" },
+      "description": "Unique-per-device visitor analytics log readable only by super admin."
     }
   }
 }

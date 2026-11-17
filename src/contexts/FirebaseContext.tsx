@@ -122,6 +122,90 @@ function sanitizePhotoDataUrl(val: unknown): string | undefined {
   return undefined;
 }
 
+const DEVICE_STORAGE_KEY = 'pairmaster_device_id_v1';
+const VISIT_SESSION_KEY = 'pairmaster_visit_counted_v1';
+
+function getOrCreateDeviceId(): string {
+  const fallbackId = `dev_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  if (typeof window === 'undefined') return fallbackId;
+  try {
+    const existing = localStorage.getItem(DEVICE_STORAGE_KEY);
+    if (existing && ID_REGEX.test(existing) && existing.length >= 8 && existing.length <= 64) {
+      return existing;
+    }
+    const rawUuid =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID().replace(/-/g, '')
+        : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+    const nextId = sanitizeId(`dev_${rawUuid}`, 64, fallbackId);
+    localStorage.setItem(DEVICE_STORAGE_KEY, nextId);
+    return nextId;
+  } catch {
+    return fallbackId;
+  }
+}
+
+function detectDeviceInfo(): { deviceLabel: string; deviceType: 'mobile' | 'tablet' | 'desktop' } {
+  if (typeof navigator === 'undefined') {
+    return { deviceLabel: '網頁裝置', deviceType: 'desktop' };
+  }
+  const ua = navigator.userAgent || '';
+  const maxTouch = navigator.maxTouchPoints || 0;
+
+  let deviceType: 'mobile' | 'tablet' | 'desktop' = 'desktop';
+  let osName = '電腦';
+
+  if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && maxTouch > 1)) {
+    deviceType = 'tablet';
+    osName = 'iPad';
+  } else if (/iPhone/i.test(ua)) {
+    deviceType = 'mobile';
+    osName = 'iPhone';
+  } else if (/Android/i.test(ua)) {
+    if (/Mobile/i.test(ua)) {
+      deviceType = 'mobile';
+      osName = 'Android 手機';
+    } else {
+      deviceType = 'tablet';
+      osName = 'Android 平板';
+    }
+  } else if (/Windows/i.test(ua)) {
+    deviceType = 'desktop';
+    osName = 'Windows';
+  } else if (/Macintosh|Mac OS X/i.test(ua)) {
+    deviceType = 'desktop';
+    osName = 'Mac';
+  } else if (/CrOS/i.test(ua)) {
+    deviceType = 'desktop';
+    osName = 'Chromebook';
+  } else if (/Linux/i.test(ua)) {
+    deviceType = 'desktop';
+    osName = 'Linux';
+  }
+
+  let browserName = '瀏覽器';
+  if (/MicroMessenger/i.test(ua)) {
+    browserName = '微信內建';
+  } else if (/Line\//i.test(ua)) {
+    browserName = 'LINE 內建';
+  } else if (/FBAN|FBAV|Instagram/i.test(ua)) {
+    browserName = 'App 內建';
+  } else if (/Edg|EdgiOS|EdgA/i.test(ua)) {
+    browserName = 'Edge';
+  } else if (/CriOS|Chrome/i.test(ua)) {
+    browserName = 'Chrome';
+  } else if (/FxiOS|Firefox/i.test(ua)) {
+    browserName = 'Firefox';
+  } else if (/Safari/i.test(ua)) {
+    browserName = 'Safari';
+  }
+
+  return {
+    deviceLabel: clampString(`${osName} · ${browserName}`, 60, '網頁裝置'),
+    deviceType,
+  };
+}
+
 export interface CloudUserScore {
   id: string;
   userId: string;
@@ -206,6 +290,19 @@ export interface ScheduledNoticeRecord {
   isActive: boolean;
 }
 
+export interface VisitorRecord {
+  id: string;
+  deviceId: string;
+  lastAuthUid: string;
+  displayName: string;
+  isSignedInUser: boolean;
+  deviceLabel: string;
+  deviceType: 'mobile' | 'tablet' | 'desktop';
+  visitCount: number;
+  firstSeenAtMs: number;
+  lastSeenAtMs: number;
+}
+
 export interface SubmitNoticeRequestInput {
   type: 'birthday' | 'confession';
   targetDate: string;
@@ -287,6 +384,10 @@ interface FirebaseContextValue {
   approveNoticeRequest: (req: NoticeRequestRecord) => Promise<void>;
   rejectNoticeRequest: (requestId: string) => Promise<void>;
   cancelScheduledNotice: (type: 'birthday' | 'confession', targetDate: string) => Promise<void>;
+  currentDeviceId: string;
+  visitors: VisitorRecord[];
+  adminRenameVisitor: (deviceId: string, newName: string) => Promise<void>;
+  adminDeleteVisitor: (deviceId: string) => Promise<void>;
 }
 
 const FirebaseContext = createContext<FirebaseContextValue | null>(null);
@@ -369,10 +470,15 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [myNoticeRequests, setMyNoticeRequests] = useState<NoticeRequestRecord[]>([]);
   const [pendingNoticeRequests, setPendingNoticeRequests] = useState<NoticeRequestRecord[]>([]);
   const [scheduledNotices, setScheduledNotices] = useState<ScheduledNoticeRecord[]>([]);
+  const [visitors, setVisitors] = useState<VisitorRecord[]>([]);
   const [todayHkDate, setTodayHkDate] = useState<string>(() => getHongKongDateString());
 
+  const currentDeviceIdRef = useRef<string>(getOrCreateDeviceId());
+  const lastRecordedVisitorSigRef = useRef<string>('');
+  const anonVisitAttemptedRef = useRef<boolean>(false);
   const profileEnsuredUidRef = useRef<string | null>(null);
   const resolvedProfileNameRef = useRef<string>('');
+  const syncedLbTargetRef = useRef<Record<string, string>>({});
   const inFlightProfileRef = useRef<{ uid: string; promise: Promise<string> } | null>(null);
 
   const clearCloudError = useCallback(() => setCloudError(null), []);
@@ -463,10 +569,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
             await setDoc(userRef, payload);
             if (isSuper) {
-              void syncOwnLeaderboardDisplayName(currentUser.uid, defaultName, [
-                rawGoogleName,
-                '糖果玩家',
-              ]).catch(() => {
+              void syncOwnLeaderboardDisplayName(currentUser.uid, defaultName).catch(() => {
                 // non-blocking migration
               });
             }
@@ -475,11 +578,14 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             const existingName =
               typeof existing.displayName === 'string' ? existing.displayName.trim() : '';
 
-            // Auto-migrate super admin from real Google name to spirit character name,
+            // Auto-migrate super admin from real Google / org name to spirit character name,
             // while preserving any custom or spirit character name chosen later.
             const needsSuperMigration =
               isSuper &&
-              (!existingName || existingName === rawGoogleName || existingName === '糖果玩家');
+              (!existingName ||
+                existingName === rawGoogleName ||
+                existingName === '糖果玩家' ||
+                existingName.toLowerCase().includes('champion edu'));
 
             finalName = needsSuperMigration
               ? DEFAULT_ADMIN_SPIRIT_NAME
@@ -498,10 +604,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             }
 
             if (isSuper) {
-              void syncOwnLeaderboardDisplayName(currentUser.uid, finalName, [
-                rawGoogleName,
-                '糖果玩家',
-              ]).catch(() => {
+              void syncOwnLeaderboardDisplayName(currentUser.uid, finalName).catch(() => {
                 // non-blocking migration
               });
             }
@@ -633,6 +736,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (!currentUser || currentUser.isAnonymous || !currentUser.emailVerified) {
         profileEnsuredUidRef.current = null;
         resolvedProfileNameRef.current = '';
+        syncedLbTargetRef.current = {};
         inFlightProfileRef.current = null;
         setProfileDisplayName('');
         setScoresMap({});
@@ -773,18 +877,127 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return () => unsub();
   }, [authReady, user]);
 
-  // Super Admin listeners: delegated admin UIDs + pending noticeRequests + scheduledNotices
+  // Unique-per-device visitor tracking (same device updates its single /visitors/{deviceId} row)
+  useEffect(() => {
+    if (!authReady || isAuthBusy) return;
+
+    let cancelled = false;
+    const trackCurrentDevice = async () => {
+      let activeUser = auth.currentUser ?? user;
+      if (!activeUser) {
+        if (anonAuthDisabled || anonVisitAttemptedRef.current) return;
+        anonVisitAttemptedRef.current = true;
+        try {
+          const anonCred = await signInAnonymously(auth);
+          activeUser = anonCred.user;
+          if (!cancelled) setAnonAuthDisabled(false);
+        } catch (anonErr) {
+          const errCode = (anonErr as { code?: string })?.code || '';
+          if (
+            errCode === 'auth/operation-not-allowed' ||
+            errCode === 'auth/admin-restricted-operation'
+          ) {
+            if (!cancelled) setAnonAuthDisabled(true);
+          }
+          return;
+        }
+      }
+
+      if (!activeUser || cancelled) return;
+      const isVerifiedGoogle = !activeUser.isAnonymous && activeUser.emailVerified;
+      if (!activeUser.isAnonymous && !activeUser.emailVerified) return;
+      if (isVerifiedGoogle && !profileDisplayName) return;
+
+      const resolvedName = isVerifiedGoogle
+        ? clampString(profileDisplayName, 60, DEFAULT_ADMIN_SPIRIT_NAME)
+        : ANONYMOUS_DISPLAY_NAME;
+      const sig = `${activeUser.uid}::${resolvedName}`;
+      if (lastRecordedVisitorSigRef.current === sig) return;
+      lastRecordedVisitorSigRef.current = sig;
+
+      const deviceId = currentDeviceIdRef.current;
+      const { deviceLabel, deviceType } = detectDeviceInfo();
+      const visitorRef = doc(db, 'visitors', deviceId);
+
+      let alreadyCountedSession = false;
+      try {
+        alreadyCountedSession = sessionStorage.getItem(VISIT_SESSION_KEY) === '1';
+      } catch {
+        alreadyCountedSession = false;
+      }
+
+      try {
+        const snap = await getDoc(visitorRef);
+        if (cancelled) return;
+        if (!snap.exists()) {
+          await setDoc(visitorRef, {
+            deviceId,
+            lastAuthUid: activeUser.uid,
+            displayName: resolvedName,
+            isSignedInUser: isVerifiedGoogle,
+            deviceLabel,
+            deviceType,
+            visitCount: 1,
+            firstSeenAt: serverTimestamp(),
+            lastSeenAt: serverTimestamp(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          const existing = snap.data();
+          const prevCount = Math.max(1, Math.min(1000000, Number(existing.visitCount ?? 1)));
+          const nextCount = alreadyCountedSession ? prevCount : Math.min(1000000, prevCount + 1);
+          const preservedName =
+            typeof existing.displayName === 'string' && existing.displayName.trim()
+              ? existing.displayName.trim()
+              : ANONYMOUS_DISPLAY_NAME;
+          const nextDisplayName = isVerifiedGoogle ? resolvedName : preservedName;
+          const nextSignedInFlag = isVerifiedGoogle ? true : Boolean(existing.isSignedInUser);
+
+          await updateDoc(visitorRef, {
+            lastAuthUid: activeUser.uid,
+            displayName: nextDisplayName,
+            isSignedInUser: nextSignedInFlag,
+            deviceLabel,
+            deviceType,
+            visitCount: nextCount,
+            lastSeenAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+        try {
+          sessionStorage.setItem(VISIT_SESSION_KEY, '1');
+        } catch {
+          // ignore sessionStorage failure
+        }
+      } catch {
+        // non-blocking analytics write
+        if (lastRecordedVisitorSigRef.current === sig) {
+          lastRecordedVisitorSigRef.current = '';
+        }
+      }
+    };
+
+    void trackCurrentDevice();
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, isAuthBusy, user, profileDisplayName, anonAuthDisabled]);
+
+  // Super Admin listeners: delegated admin UIDs + pending noticeRequests + scheduledNotices + visitors
   useEffect(() => {
     if (!authReady || !user || user.isAnonymous || !user.emailVerified) {
       setAdminUsers([]);
       setPendingNoticeRequests([]);
       setScheduledNotices([]);
+      setVisitors([]);
       return;
     }
     if (!isSuperAdminEmail(user.email)) {
       setAdminUsers([]);
       setPendingNoticeRequests([]);
       setScheduledNotices([]);
+      setVisitors([]);
       return;
     }
 
@@ -866,10 +1079,47 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     );
 
+    const visitorsQuery = query(
+      collection(db, 'visitors'),
+      where('deviceId', '>', ''),
+      limit(300)
+    );
+    const unsubVisitors = onSnapshot(
+      visitorsQuery,
+      (snapshot) => {
+        const list: VisitorRecord[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            deviceId: String(data.deviceId ?? d.id),
+            lastAuthUid: String(data.lastAuthUid ?? ''),
+            displayName: String(data.displayName ?? ANONYMOUS_DISPLAY_NAME),
+            isSignedInUser: Boolean(data.isSignedInUser),
+            deviceLabel: String(data.deviceLabel ?? '網頁裝置'),
+            deviceType:
+              data.deviceType === 'mobile' || data.deviceType === 'tablet'
+                ? data.deviceType
+                : 'desktop',
+            visitCount: Number(data.visitCount ?? 1),
+            firstSeenAtMs:
+              data.firstSeenAt instanceof Timestamp ? data.firstSeenAt.toMillis() : Date.now(),
+            lastSeenAtMs:
+              data.lastSeenAt instanceof Timestamp ? data.lastSeenAt.toMillis() : Date.now(),
+          };
+        });
+        list.sort((a, b) => b.lastSeenAtMs - a.lastSeenAtMs);
+        setVisitors(list);
+      },
+      () => {
+        setVisitors([]);
+      }
+    );
+
     return () => {
       unsubAdmins();
       unsubPending();
       unsubScheduled();
+      unsubVisitors();
     };
   }, [authReady, user]);
 
@@ -1019,6 +1269,31 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [scoresMap]
   );
 
+  // Reactive sync: ensure any loaded leaderboard rows belonging to the signed-in user
+  // immediately reflect their current gameDisplayName (e.g., migrating legacy org/Google names)
+  useEffect(() => {
+    if (!authReady || !user || user.isAnonymous || !user.emailVerified || !profileDisplayName) {
+      return;
+    }
+    const staleEntries = leaderboardEntries.filter(
+      (entry) =>
+        entry.userId === user.uid &&
+        entry.displayName !== profileDisplayName &&
+        syncedLbTargetRef.current[entry.id] !== profileDisplayName
+    );
+    if (staleEntries.length === 0) return;
+
+    staleEntries.forEach((entry) => {
+      syncedLbTargetRef.current[entry.id] = profileDisplayName;
+      void updateDoc(doc(db, 'leaderboard', entry.id), {
+        displayName: profileDisplayName,
+        updatedAt: serverTimestamp(),
+      }).catch(() => {
+        delete syncedLbTargetRef.current[entry.id];
+      });
+    });
+  }, [authReady, user, profileDisplayName, leaderboardEntries]);
+
   const getPublicStageBest = useCallback(
     (gameMode: 'flip' | 'link', difficultyId: string, themeId: string): CloudLeaderboardEntry | null => {
       const safeMode = sanitizeId(gameMode, 8, 'flip');
@@ -1040,9 +1315,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           }
         }
       }
+      if (best && user && !user.isAnonymous && user.emailVerified && best.userId === user.uid && profileDisplayName) {
+        return { ...best, displayName: profileDisplayName };
+      }
       return best;
     },
-    [leaderboardEntries]
+    [leaderboardEntries, user, profileDisplayName]
   );
 
   const saveGameScore = useCallback(
@@ -1895,6 +2173,54 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [user, isAdmin, reportFriendlyError]
   );
 
+  const adminRenameVisitor = useCallback(
+    async (deviceId: string, newName: string) => {
+      if (!user || user.isAnonymous || !user.emailVerified || !isSuperAdminEmail(user.email)) {
+        return;
+      }
+      const safeDeviceId = sanitizeId(deviceId, 64, '');
+      if (!safeDeviceId) return;
+      const safeName = clampString(newName, 60, ANONYMOUS_DISPLAY_NAME);
+      const path = `visitors/${safeDeviceId}`;
+      try {
+        await updateDoc(doc(db, 'visitors', safeDeviceId), {
+          displayName: safeName,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        try {
+          handleFirestoreError(err, OperationType.UPDATE, path);
+        } catch (wrapped) {
+          reportFriendlyError(wrapped);
+          throw wrapped;
+        }
+      }
+    },
+    [user, reportFriendlyError]
+  );
+
+  const adminDeleteVisitor = useCallback(
+    async (deviceId: string) => {
+      if (!user || user.isAnonymous || !user.emailVerified || !isSuperAdminEmail(user.email)) {
+        return;
+      }
+      const safeDeviceId = sanitizeId(deviceId, 64, '');
+      if (!safeDeviceId) return;
+      const path = `visitors/${safeDeviceId}`;
+      try {
+        await deleteDoc(doc(db, 'visitors', safeDeviceId));
+      } catch (err) {
+        try {
+          handleFirestoreError(err, OperationType.DELETE, path);
+        } catch (wrapped) {
+          reportFriendlyError(wrapped);
+          throw wrapped;
+        }
+      }
+    },
+    [user, reportFriendlyError]
+  );
+
   const isVerifiedGoogleUser = Boolean(user && !user.isAnonymous && user.emailVerified);
   const isSuperAdmin = Boolean(isVerifiedGoogleUser && isSuperAdminEmail(user?.email));
   const gameDisplayName = isVerifiedGoogleUser && user
@@ -1951,6 +2277,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         approveNoticeRequest,
         rejectNoticeRequest,
         cancelScheduledNotice,
+        currentDeviceId: currentDeviceIdRef.current,
+        visitors,
+        adminRenameVisitor,
+        adminDeleteVisitor,
       }}
     >
       {children}

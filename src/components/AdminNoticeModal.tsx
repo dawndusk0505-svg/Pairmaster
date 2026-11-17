@@ -21,11 +21,16 @@ import {
   Tag,
   Pencil,
   Search,
+  Users,
+  Smartphone,
+  Tablet,
+  Monitor,
 } from 'lucide-react';
 import {
   ANONYMOUS_DISPLAY_NAME,
   NoticeRequestRecord,
   SPIRIT_CHARACTER_OPTIONS,
+  getHongKongDateString,
   getMsUntilHongKongMidnight,
   useFirebase,
 } from '../contexts/FirebaseContext';
@@ -37,7 +42,7 @@ interface AdminNoticeModalProps {
   onClose: () => void;
 }
 
-type AdminTab = 'requests' | 'scheduled' | 'birthday' | 'confession' | 'names' | 'admins';
+type AdminTab = 'requests' | 'scheduled' | 'birthday' | 'confession' | 'names' | 'visitors' | 'admins';
 
 function formatCountdown(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -86,6 +91,11 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
     updateMyGameDisplayName,
     adminUpdateLeaderboardDisplayName,
     adminDeleteLeaderboardEntry,
+    currentDeviceId,
+    visitors,
+    anonAuthDisabled,
+    adminRenameVisitor,
+    adminDeleteVisitor,
   } = useFirebase();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('birthday');
@@ -106,6 +116,13 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
   const [editingEntryName, setEditingEntryName] = useState('');
   const [confirmDeleteEntryId, setConfirmDeleteEntryId] = useState<string | null>(null);
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
+
+  const [visitorSearchQuery, setVisitorSearchQuery] = useState('');
+  const [visitorFilter, setVisitorFilter] = useState<'all' | 'signed_in' | 'guest'>('all');
+  const [editingVisitorId, setEditingVisitorId] = useState<string | null>(null);
+  const [editingVisitorName, setEditingVisitorName] = useState('');
+  const [confirmDeleteVisitorId, setConfirmDeleteVisitorId] = useState<string | null>(null);
+  const [busyVisitorId, setBusyVisitorId] = useState<string | null>(null);
 
   const [newAdminUid, setNewAdminUid] = useState('');
   const [newAdminNote, setNewAdminNote] = useState('');
@@ -149,6 +166,9 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
       setMyNameInput(gameDisplayName);
       setEditingEntryId(null);
       setConfirmDeleteEntryId(null);
+    } else if (activeTab === 'visitors') {
+      setEditingVisitorId(null);
+      setConfirmDeleteVisitorId(null);
     }
   }, [isOpen, activeTab, todayBirthdayNotice, todayConfessionNotice, gameDisplayName]);
 
@@ -409,6 +429,80 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
     }
   };
 
+  const handleRenameVisitor = async (deviceId: string, nextName: string) => {
+    const cleanName = nextName.trim() || ANONYMOUS_DISPLAY_NAME;
+    setBusyVisitorId(deviceId);
+    setFeedback(null);
+    try {
+      await adminRenameVisitor(deviceId, cleanName);
+      setEditingVisitorId(null);
+      soundFx.playClick();
+      setFeedback({
+        type: 'ok',
+        text: `已為該裝置訪客標註名稱為「${cleanName}」！`,
+      });
+    } catch {
+      setFeedback({ type: 'err', text: '修改訪客備註名稱失敗，請稍後再試。' });
+    } finally {
+      setBusyVisitorId(null);
+    }
+  };
+
+  const handleDeleteVisitor = async (deviceId: string) => {
+    setBusyVisitorId(deviceId);
+    setFeedback(null);
+    try {
+      await adminDeleteVisitor(deviceId);
+      setConfirmDeleteVisitorId(null);
+      soundFx.playClick();
+      setFeedback({
+        type: 'ok',
+        text: '已移除該裝置的訪客統計紀錄！',
+      });
+    } catch {
+      setFeedback({ type: 'err', text: '刪除訪客紀錄失敗，請稍後再試。' });
+    } finally {
+      setBusyVisitorId(null);
+    }
+  };
+
+  const visitorSummary = useMemo(() => {
+    let signedInCount = 0;
+    let guestCount = 0;
+    let todayActiveCount = 0;
+    let totalVisits = 0;
+
+    for (const v of visitors) {
+      if (v.isSignedInUser) signedInCount += 1;
+      else guestCount += 1;
+      totalVisits += v.visitCount;
+      if (getHongKongDateString(new Date(v.lastSeenAtMs)) === todayHkDate) {
+        todayActiveCount += 1;
+      }
+    }
+    return {
+      uniqueDevices: visitors.length,
+      signedInCount,
+      guestCount,
+      todayActiveCount,
+      totalVisits,
+    };
+  }, [visitors, todayHkDate]);
+
+  const filteredVisitors = useMemo(() => {
+    const q = visitorSearchQuery.trim().toLowerCase();
+    return visitors.filter((v) => {
+      if (visitorFilter === 'signed_in' && !v.isSignedInUser) return false;
+      if (visitorFilter === 'guest' && v.isSignedInUser) return false;
+      if (!q) return true;
+      return (
+        v.displayName.toLowerCase().includes(q) ||
+        v.deviceLabel.toLowerCase().includes(q) ||
+        v.deviceId.toLowerCase().includes(q)
+      );
+    });
+  }, [visitors, visitorFilter, visitorSearchQuery]);
+
   const filteredLeaderboardForAdmin = useMemo(() => {
     const q = nameSearchQuery.trim().toLowerCase();
     return [...leaderboardEntries]
@@ -562,6 +656,24 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
             <Tag className="w-3.5 h-3.5" />
             <span>名稱管理</span>
           </button>
+
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                setActiveTab('visitors');
+              }}
+              className={`flex-1 min-w-[95px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                activeTab === 'visitors'
+                  ? 'bg-gradient-to-r from-sky-500 to-indigo-500 text-white shadow-sm'
+                  : 'text-slate-700 hover:text-pink-600'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>訪客 ({visitors.length})</span>
+            </button>
+          )}
 
           {isSuperAdmin && (
             <button
@@ -1331,7 +1443,268 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
             </div>
           )}
 
-          {/* TAB 6: Delegated Admin UIDs */}
+          {/* TAB 6: Unique-Device Visitors Analytics */}
+          {activeTab === 'visitors' && isSuperAdmin && (
+            <div className="space-y-4">
+              {/* Summary KPIs */}
+              <div className="grid grid-cols-3 gap-2.5 text-center">
+                <div className="bg-gradient-to-br from-sky-50 to-indigo-50 border border-sky-200 rounded-2xl p-3">
+                  <span className="text-[11px] font-black text-sky-700 block">獨立裝置人數</span>
+                  <span className="text-2xl font-black font-mono text-sky-800 tabular-nums">
+                    {visitorSummary.uniqueDevices}
+                  </span>
+                  <span className="text-[10px] font-bold text-sky-600 block">
+                    同裝置只計 1 人
+                  </span>
+                </div>
+
+                <div className="bg-gradient-to-br from-pink-50 to-rose-50 border border-pink-200 rounded-2xl p-3">
+                  <span className="text-[11px] font-black text-pink-700 block">已登入 / 訪客</span>
+                  <span className="text-2xl font-black font-mono text-pink-700 tabular-nums">
+                    {visitorSummary.signedInCount}
+                    <span className="text-xs text-slate-400 mx-1">/</span>
+                    <span className="text-lg text-slate-600">{visitorSummary.guestCount}</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-pink-600 block">
+                    玩家帳號 vs 未登入
+                  </span>
+                </div>
+
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-3">
+                  <span className="text-[11px] font-black text-emerald-700 block">今日活躍 / 總瀏覽</span>
+                  <span className="text-2xl font-black font-mono text-emerald-700 tabular-nums">
+                    {visitorSummary.todayActiveCount}
+                    <span className="text-xs text-slate-400 mx-1">/</span>
+                    <span className="text-lg text-teal-600">{visitorSummary.totalVisits}</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-600 block">
+                    今日人流 · 累積次數
+                  </span>
+                </div>
+              </div>
+
+              {anonAuthDisabled && (
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-800 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <span>
+                    未登入訪客目前未啟用 Firebase 匿名登入（Anonymous Auth），所以暫只統計已 Google 登入玩家；如要連未登入訪客都統計，請於 Firebase Console 啟用「匿名 (Anonymous)」。
+                  </span>
+                </div>
+              )}
+
+              {/* Filter & Search Controls */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(
+                    [
+                      ['all', `全部 (${visitorSummary.uniqueDevices})`],
+                      ['signed_in', `已登入玩家 (${visitorSummary.signedInCount})`],
+                      ['guest', `未登入訪客 (${visitorSummary.guestCount})`],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        soundFx.playClick();
+                        setVisitorFilter(key);
+                      }}
+                      className={`px-3 py-1.5 text-xs font-black rounded-xl border transition-all cursor-pointer ${
+                        visitorFilter === key
+                          ? 'bg-sky-600 text-white border-sky-600 shadow-xs'
+                          : 'bg-white text-slate-600 border-pink-200 hover:bg-pink-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={visitorSearchQuery}
+                    onChange={(e) => setVisitorSearchQuery(e.target.value)}
+                    placeholder="搜尋訪客名稱或裝置（例如：iPhone、Mac、Safari）..."
+                    className="w-full pl-8 pr-3 py-2 text-xs font-bold bg-pink-50/40 border border-pink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  />
+                </div>
+              </div>
+
+              {/* Visitor Device List */}
+              {filteredVisitors.length === 0 ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center space-y-1">
+                  <Users className="w-7 h-7 text-slate-300 mx-auto" />
+                  <p className="text-xs font-black text-slate-600">暫時未有符合條件的訪客紀錄</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {filteredVisitors.map((v) => {
+                    const isSelfDevice = v.deviceId === currentDeviceId;
+                    const isEditing = editingVisitorId === v.id;
+                    const isConfirmDelete = confirmDeleteVisitorId === v.id;
+                    const isBusy = busyVisitorId === v.id;
+                    const matchedSpirit = SPIRIT_CHARACTER_OPTIONS.find((s) => s.name === v.displayName);
+
+                    return (
+                      <div
+                        key={v.id}
+                        className={`border rounded-2xl p-3 space-y-2 transition-all ${
+                          isSelfDevice
+                            ? 'bg-sky-50/70 border-sky-300'
+                            : 'bg-white border-pink-100 hover:border-pink-200'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            {matchedSpirit?.imageUrl ? (
+                              <img
+                                src={matchedSpirit.imageUrl}
+                                alt={v.displayName}
+                                className="w-9 h-9 rounded-xl object-cover border border-pink-200 shrink-0"
+                              />
+                            ) : (
+                              <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+                                {v.deviceType === 'mobile' ? (
+                                  <Smartphone className="w-4 h-4" />
+                                ) : v.deviceType === 'tablet' ? (
+                                  <Tablet className="w-4 h-4" />
+                                ) : (
+                                  <Monitor className="w-4 h-4" />
+                                )}
+                              </div>
+                            )}
+
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs sm:text-sm font-black text-slate-900 truncate">
+                                  {v.displayName}
+                                </span>
+                                <span
+                                  className={`px-1.5 py-0.5 text-[10px] font-black rounded-md ${
+                                    v.isSignedInUser
+                                      ? 'bg-pink-100 text-pink-700'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                >
+                                  {v.isSignedInUser ? '已登入玩家' : '訪客'}
+                                </span>
+                                {isSelfDevice && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-black rounded-md bg-sky-600 text-white">
+                                    本機裝置
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="text-[11px] font-bold text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <span>📱 {v.deviceLabel}</span>
+                                <span aria-hidden="true">·</span>
+                                <span className="text-indigo-600 font-black">
+                                  到訪 {v.visitCount} 次
+                                </span>
+                              </p>
+
+                              <p className="text-[10px] font-mono font-bold text-slate-500">
+                                最後到訪：{formatExactHkTime(v.lastSeenAtMs)} · 首次：{formatExactHkTime(v.firstSeenAtMs)}
+                              </p>
+                            </div>
+                          </div>
+
+                          {!isEditing && !isConfirmDelete && (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => {
+                                  soundFx.playClick();
+                                  setEditingVisitorId(v.id);
+                                  setEditingVisitorName(v.displayName);
+                                  setConfirmDeleteVisitorId(null);
+                                }}
+                                className="px-2 py-1 text-[11px] font-black text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                <span>備註改名</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => {
+                                  soundFx.playClick();
+                                  setConfirmDeleteVisitorId(v.id);
+                                  setEditingVisitorId(null);
+                                }}
+                                className="px-2 py-1 text-[11px] font-black text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>移除</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {isEditing && (
+                          <div className="flex items-center gap-1.5 pt-1.5 border-t border-pink-100">
+                            <input
+                              type="text"
+                              maxLength={60}
+                              value={editingVisitorName}
+                              onChange={(e) => setEditingVisitorName(e.target.value)}
+                              placeholder="輸入備註名稱（例如：小明嘅 iPhone）"
+                              className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-bold bg-white border border-sky-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400"
+                            />
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => void handleRenameVisitor(v.id, editingVisitorName)}
+                              className="px-2.5 py-1.5 text-[11px] font-black text-white bg-sky-600 hover:bg-sky-700 rounded-lg cursor-pointer disabled:opacity-50"
+                            >
+                              儲存
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingVisitorId(null)}
+                              className="px-2 py-1.5 text-[11px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg cursor-pointer"
+                            >
+                              取消
+                            </button>
+                          </div>
+                        )}
+
+                        {isConfirmDelete && (
+                          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-rose-100 bg-rose-50/70 rounded-lg px-2.5 py-1.5">
+                            <span className="text-[11px] font-black text-rose-700">
+                              確定移除「{v.displayName}」（{v.deviceLabel}）的訪客紀錄？
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => void handleDeleteVisitor(v.id)}
+                                className="px-2.5 py-1 text-[11px] font-black text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer disabled:opacity-50"
+                              >
+                                確認移除
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteVisitorId(null)}
+                                className="px-2 py-1 text-[11px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg cursor-pointer"
+                              >
+                                取消
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 7: Delegated Admin UIDs */}
           {activeTab === 'admins' && (
             <div className="space-y-3.5">
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1.5 text-xs">

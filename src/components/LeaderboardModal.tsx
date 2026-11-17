@@ -509,7 +509,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm font-black text-slate-800 truncate">
-                          {entry.displayName}
+                          {isMe ? gameDisplayName : entry.displayName}
                         </span>
                         {isMe && (
                           <span className="text-[10px] font-black text-pink-600">（我）</span>
