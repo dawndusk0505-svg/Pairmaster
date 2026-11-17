@@ -47,7 +47,7 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
     isAdmin,
     isSuperAdmin,
     pendingNoticeRequests,
-    visitors,
+    externalVisitorCount,
   } = useFirebase();
 
   const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; caption: string } | null>(null);
@@ -257,7 +257,7 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                   className="px-3 py-1.5 text-xs font-black text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all"
                 >
                   <Users className="w-3.5 h-3.5 text-sky-600" />
-                  <span>訪客統計 ({visitors.length})</span>
+                  <span>訪客統計 ({externalVisitorCount})</span>
                 </button>
               )}
             </div>
@@ -319,7 +319,7 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                     className="px-2.5 py-1 text-[11px] font-black text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-300 rounded-xl flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
                   >
                     <Users className="w-3 h-3 text-sky-600" />
-                    <span>訪客統計 ({visitors.length})</span>
+                    <span>訪客統計 ({externalVisitorCount})</span>
                   </button>
                 )}
               </div>

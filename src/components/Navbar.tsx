@@ -32,7 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     isSuperAdmin,
     gameDisplayName,
     pendingNoticeRequests,
-    visitors,
+    externalVisitorCount,
     user,
     authReady,
     isAuthBusy,
@@ -141,7 +141,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Users className="w-4 h-4 text-sky-600" />
               <span className="hidden sm:inline">訪客</span>
               <span className="px-1 py-0.5 text-[10px] leading-none font-black bg-sky-600 text-white rounded-md tabular-nums">
-                {visitors.length}
+                {externalVisitorCount}
               </span>
             </button>
           )}

@@ -94,10 +94,12 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
     adminDeleteLeaderboardEntry,
     currentDeviceId,
     visitors,
+    externalVisitorCount,
     visitorsError,
     anonAuthDisabled,
     adminRenameVisitor,
     adminDeleteVisitor,
+    adminDeleteVisitorsBatch,
   } = useFirebase();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('birthday');
@@ -121,10 +123,12 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
 
   const [visitorSearchQuery, setVisitorSearchQuery] = useState('');
   const [visitorFilter, setVisitorFilter] = useState<'all' | 'signed_in' | 'guest'>('all');
+  const [showAdminVisitors, setShowAdminVisitors] = useState(false);
   const [editingVisitorId, setEditingVisitorId] = useState<string | null>(null);
   const [editingVisitorName, setEditingVisitorName] = useState('');
   const [confirmDeleteVisitorId, setConfirmDeleteVisitorId] = useState<string | null>(null);
   const [busyVisitorId, setBusyVisitorId] = useState<string | null>(null);
+  const [isClearingAdminVisitors, setIsClearingAdminVisitors] = useState(false);
 
   const [newAdminUid, setNewAdminUid] = useState('');
   const [newAdminNote, setNewAdminNote] = useState('');
@@ -232,6 +236,135 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
     list.forEach((g) => g.items.sort((a, b) => a.createdAtMs - b.createdAtMs));
     return list;
   }, [pendingNoticeRequests]);
+
+  // Deduplicate visitors by person (same verified Google UID across origins/devices -> 1 person; anonymous -> 1 deviceId = 1 person)
+  const dedupedVisitors = useMemo(() => {
+    const adminUidSet = new Set<string>(adminUsers.map((a) => a.uid));
+    if (user?.uid) adminUidSet.add(user.uid);
+
+    const grouped = new Map<
+      string,
+      {
+        personKey: string;
+        primaryId: string;
+        deviceIds: string[];
+        deviceLabels: string[];
+        lastAuthUid: string;
+        displayName: string;
+        isSignedInUser: boolean;
+        isAdminSelf: boolean;
+        hasCurrentDevice: boolean;
+        deviceType: 'mobile' | 'tablet' | 'desktop';
+        visitCount: number;
+        firstSeenAtMs: number;
+        lastSeenAtMs: number;
+      }
+    >();
+
+    for (const v of visitors) {
+      const personKey = v.isSignedInUser && v.lastAuthUid ? `uid:${v.lastAuthUid}` : `dev:${v.deviceId}`;
+      const isSelfRow = v.deviceId === currentDeviceId || (Boolean(v.lastAuthUid) && adminUidSet.has(v.lastAuthUid));
+      const existing = grouped.get(personKey);
+
+      if (!existing) {
+        grouped.set(personKey, {
+          personKey,
+          primaryId: v.id,
+          deviceIds: [v.deviceId],
+          deviceLabels: [v.deviceLabel],
+          lastAuthUid: v.lastAuthUid,
+          displayName: v.displayName,
+          isSignedInUser: v.isSignedInUser,
+          isAdminSelf: isSelfRow,
+          hasCurrentDevice: v.deviceId === currentDeviceId,
+          deviceType: v.deviceType,
+          visitCount: v.visitCount,
+          firstSeenAtMs: v.firstSeenAtMs,
+          lastSeenAtMs: v.lastSeenAtMs,
+        });
+      } else {
+        if (!existing.deviceIds.includes(v.deviceId)) {
+          existing.deviceIds.push(v.deviceId);
+        }
+        if (!existing.deviceLabels.includes(v.deviceLabel)) {
+          existing.deviceLabels.push(v.deviceLabel);
+        }
+        existing.visitCount += v.visitCount;
+        existing.firstSeenAtMs = Math.min(existing.firstSeenAtMs, v.firstSeenAtMs);
+        if (v.lastSeenAtMs >= existing.lastSeenAtMs) {
+          existing.lastSeenAtMs = v.lastSeenAtMs;
+          existing.primaryId = v.id;
+          existing.displayName = v.displayName;
+          existing.deviceType = v.deviceType;
+        }
+        if (isSelfRow) existing.isAdminSelf = true;
+        if (v.deviceId === currentDeviceId) existing.hasCurrentDevice = true;
+      }
+    }
+
+    return Array.from(grouped.values()).sort((a, b) => b.lastSeenAtMs - a.lastSeenAtMs);
+  }, [visitors, adminUsers, user?.uid, currentDeviceId]);
+
+  const visitorSummary = useMemo(() => {
+    let signedInCount = 0;
+    let guestCount = 0;
+    let todayActiveCount = 0;
+    let totalVisits = 0;
+    let adminSelfDeviceCount = 0;
+    const adminSelfDeviceIds: string[] = [];
+
+    for (const p of dedupedVisitors) {
+      if (p.isAdminSelf) {
+        adminSelfDeviceCount += p.deviceIds.length;
+        adminSelfDeviceIds.push(...p.deviceIds);
+      }
+      if (!showAdminVisitors && p.isAdminSelf) continue;
+      if (p.isSignedInUser) signedInCount += 1;
+      else guestCount += 1;
+      totalVisits += p.visitCount;
+      if (getHongKongDateString(new Date(p.lastSeenAtMs)) === todayHkDate) {
+        todayActiveCount += 1;
+      }
+    }
+    return {
+      uniquePeople: signedInCount + guestCount,
+      signedInCount,
+      guestCount,
+      todayActiveCount,
+      totalVisits,
+      adminSelfDeviceCount,
+      adminSelfDeviceIds,
+    };
+  }, [dedupedVisitors, showAdminVisitors, todayHkDate]);
+
+  const filteredVisitors = useMemo(() => {
+    const q = visitorSearchQuery.trim().toLowerCase();
+    return dedupedVisitors.filter((p) => {
+      if (!showAdminVisitors && p.isAdminSelf) return false;
+      if (visitorFilter === 'signed_in' && !p.isSignedInUser) return false;
+      if (visitorFilter === 'guest' && p.isSignedInUser) return false;
+      if (!q) return true;
+      return (
+        p.displayName.toLowerCase().includes(q) ||
+        p.deviceLabels.some((lbl) => lbl.toLowerCase().includes(q)) ||
+        p.deviceIds.some((id) => id.toLowerCase().includes(q))
+      );
+    });
+  }, [dedupedVisitors, showAdminVisitors, visitorFilter, visitorSearchQuery]);
+
+  const filteredLeaderboardForAdmin = useMemo(() => {
+    const q = nameSearchQuery.trim().toLowerCase();
+    return [...leaderboardEntries]
+      .sort((a, b) => b.highScore - a.highScore)
+      .filter((entry) => {
+        if (!q) return true;
+        return (
+          entry.displayName.toLowerCase().includes(q) ||
+          entry.themeName.toLowerCase().includes(q) ||
+          entry.difficultyId.toLowerCase().includes(q)
+        );
+      });
+  }, [leaderboardEntries, nameSearchQuery]);
 
   if (!isOpen || !isAdmin) return null;
 
@@ -460,16 +593,20 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
     }
   };
 
-  const handleDeleteVisitor = async (deviceId: string) => {
-    setBusyVisitorId(deviceId);
+  const handleDeleteVisitorPerson = async (primaryId: string, deviceIds: string[]) => {
+    setBusyVisitorId(primaryId);
     setFeedback(null);
     try {
-      await adminDeleteVisitor(deviceId);
+      if (deviceIds.length > 1) {
+        await adminDeleteVisitorsBatch(deviceIds);
+      } else {
+        await adminDeleteVisitor(primaryId);
+      }
       setConfirmDeleteVisitorId(null);
       soundFx.playClick();
       setFeedback({
         type: 'ok',
-        text: '已移除該裝置的訪客統計紀錄！',
+        text: '已移除該訪客的統計紀錄！',
       });
     } catch {
       setFeedback({ type: 'err', text: '刪除訪客紀錄失敗，請稍後再試。' });
@@ -478,56 +615,23 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
     }
   };
 
-  const visitorSummary = useMemo(() => {
-    let signedInCount = 0;
-    let guestCount = 0;
-    let todayActiveCount = 0;
-    let totalVisits = 0;
-
-    for (const v of visitors) {
-      if (v.isSignedInUser) signedInCount += 1;
-      else guestCount += 1;
-      totalVisits += v.visitCount;
-      if (getHongKongDateString(new Date(v.lastSeenAtMs)) === todayHkDate) {
-        todayActiveCount += 1;
-      }
-    }
-    return {
-      uniqueDevices: visitors.length,
-      signedInCount,
-      guestCount,
-      todayActiveCount,
-      totalVisits,
-    };
-  }, [visitors, todayHkDate]);
-
-  const filteredVisitors = useMemo(() => {
-    const q = visitorSearchQuery.trim().toLowerCase();
-    return visitors.filter((v) => {
-      if (visitorFilter === 'signed_in' && !v.isSignedInUser) return false;
-      if (visitorFilter === 'guest' && v.isSignedInUser) return false;
-      if (!q) return true;
-      return (
-        v.displayName.toLowerCase().includes(q) ||
-        v.deviceLabel.toLowerCase().includes(q) ||
-        v.deviceId.toLowerCase().includes(q)
-      );
-    });
-  }, [visitors, visitorFilter, visitorSearchQuery]);
-
-  const filteredLeaderboardForAdmin = useMemo(() => {
-    const q = nameSearchQuery.trim().toLowerCase();
-    return [...leaderboardEntries]
-      .sort((a, b) => b.highScore - a.highScore)
-      .filter((entry) => {
-        if (!q) return true;
-        return (
-          entry.displayName.toLowerCase().includes(q) ||
-          entry.themeName.toLowerCase().includes(q) ||
-          entry.difficultyId.toLowerCase().includes(q)
-        );
+  const handleClearAdminSelfVisitors = async () => {
+    if (visitorSummary.adminSelfDeviceIds.length === 0) return;
+    setIsClearingAdminVisitors(true);
+    setFeedback(null);
+    try {
+      await adminDeleteVisitorsBatch(visitorSummary.adminSelfDeviceIds);
+      soundFx.playClick();
+      setFeedback({
+        type: 'ok',
+        text: `已清除 ${visitorSummary.adminSelfDeviceIds.length} 筆管理員自己測試用紀錄！`,
       });
-  }, [leaderboardEntries, nameSearchQuery]);
+    } catch {
+      setFeedback({ type: 'err', text: '清除測試紀錄失敗，請稍後再試。' });
+    } finally {
+      setIsClearingAdminVisitors(false);
+    }
+  };
 
   const upcomingScheduled = scheduledNotices.filter((s) => s.targetDate >= todayHkDate);
 
@@ -573,7 +677,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex flex-wrap gap-1.5 p-1 bg-pink-100/70 rounded-2xl border border-pink-200 shrink-0">
+        <div className="flex flex-nowrap overflow-x-auto sm:flex-wrap gap-1.5 p-1 bg-pink-100/70 rounded-2xl border border-pink-200 shrink-0">
           {isSuperAdmin && (
             <button
               type="button"
@@ -581,7 +685,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                 soundFx.playClick();
                 setActiveTab('requests');
               }}
-              className={`flex-1 min-w-[110px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer ${
+              className={`shrink-0 sm:flex-1 sm:min-w-[105px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                 activeTab === 'requests'
                   ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-sm'
                   : 'text-slate-700 hover:text-pink-600'
@@ -610,7 +714,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                 soundFx.playClick();
                 setActiveTab('scheduled');
               }}
-              className={`flex-1 min-w-[95px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer ${
+              className={`shrink-0 sm:flex-1 sm:min-w-[95px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                 activeTab === 'scheduled'
                   ? 'bg-emerald-500 text-white shadow-sm'
                   : 'text-slate-700 hover:text-pink-600'
@@ -627,7 +731,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
               soundFx.playClick();
               setActiveTab('birthday');
             }}
-            className={`flex-1 min-w-[90px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer ${
+            className={`shrink-0 sm:flex-1 sm:min-w-[88px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
               activeTab === 'birthday'
                 ? 'bg-gradient-to-r from-amber-400 to-rose-400 text-white shadow-sm'
                 : 'text-slate-700 hover:text-pink-600'
@@ -643,7 +747,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
               soundFx.playClick();
               setActiveTab('confession');
             }}
-            className={`flex-1 min-w-[90px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer ${
+            className={`shrink-0 sm:flex-1 sm:min-w-[88px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
               activeTab === 'confession'
                 ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-sm'
                 : 'text-slate-700 hover:text-pink-600'
@@ -659,7 +763,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
               soundFx.playClick();
               setActiveTab('names');
             }}
-            className={`flex-1 min-w-[90px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer ${
+            className={`shrink-0 sm:flex-1 sm:min-w-[88px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
               activeTab === 'names'
                 ? 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-sm'
                 : 'text-slate-700 hover:text-pink-600'
@@ -676,14 +780,14 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                 soundFx.playClick();
                 setActiveTab('visitors');
               }}
-              className={`flex-1 min-w-[95px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer ${
+              className={`shrink-0 sm:flex-1 sm:min-w-[92px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                 activeTab === 'visitors'
                   ? 'bg-gradient-to-r from-sky-500 to-indigo-500 text-white shadow-sm'
                   : 'text-slate-700 hover:text-pink-600'
               }`}
             >
               <Users className="w-3.5 h-3.5" />
-              <span>訪客 ({visitors.length})</span>
+              <span>訪客 ({externalVisitorCount})</span>
             </button>
           )}
 
@@ -694,7 +798,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                 soundFx.playClick();
                 setActiveTab('admins');
               }}
-              className={`flex-1 min-w-[85px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer ${
+              className={`shrink-0 sm:flex-1 sm:min-w-[82px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                 activeTab === 'admins'
                   ? 'bg-slate-800 text-white shadow-sm'
                   : 'text-slate-700 hover:text-pink-600'
@@ -1455,18 +1559,20 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
             </div>
           )}
 
-          {/* TAB 6: Unique-Device Visitors Analytics */}
+          {/* TAB 6: Unique-Person & Unique-Device Visitors Analytics */}
           {activeTab === 'visitors' && isSuperAdmin && (
             <div className="space-y-4">
               {/* Summary KPIs */}
               <div className="grid grid-cols-3 gap-2.5 text-center">
                 <div className="bg-gradient-to-br from-sky-50 to-indigo-50 border border-sky-200 rounded-2xl p-3">
-                  <span className="text-[11px] font-black text-sky-700 block">獨立裝置人數</span>
+                  <span className="text-[11px] font-black text-sky-700 block">
+                    {showAdminVisitors ? '總獨立人數' : '真實訪客數'}
+                  </span>
                   <span className="text-2xl font-black font-mono text-sky-800 tabular-nums">
-                    {visitorSummary.uniqueDevices}
+                    {visitorSummary.uniquePeople}
                   </span>
                   <span className="text-[10px] font-bold text-sky-600 block">
-                    同裝置只計 1 人
+                    同裝置／同帳號去重
                   </span>
                 </div>
 
@@ -1495,6 +1601,42 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                 </div>
               </div>
 
+              {/* Accuracy Protection Bar: Admin Self-Exclusion + One-Click Test Cleanup */}
+              <div className="p-2.5 rounded-2xl bg-sky-50/80 border border-sky-200 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-sky-900">
+                <span>
+                  🛡️ 已啟用機械人過濾、同帳號跨視窗合併，並預設排除管理員本人裝置（{visitorSummary.adminSelfDeviceCount} 台）以確保數據 100% 真確。
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      setShowAdminVisitors((prev) => !prev);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg border text-[11px] font-black cursor-pointer transition-colors ${
+                      showAdminVisitors
+                        ? 'bg-sky-600 text-white border-sky-600'
+                        : 'bg-white text-sky-700 border-sky-300 hover:bg-sky-100'
+                    }`}
+                  >
+                    {showAdminVisitors
+                      ? `隱藏自己裝置 (${visitorSummary.adminSelfDeviceCount})`
+                      : `檢視自己裝置 (${visitorSummary.adminSelfDeviceCount})`}
+                  </button>
+
+                  {visitorSummary.adminSelfDeviceIds.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={isClearingAdminVisitors}
+                      onClick={() => void handleClearAdminSelfVisitors()}
+                      className="px-2.5 py-1 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 text-[11px] font-black cursor-pointer disabled:opacity-50"
+                    >
+                      {isClearingAdminVisitors ? '清除中...' : '清除自己測試紀錄'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {visitorsError && (
                 <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-[11px] font-bold text-rose-700 flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
@@ -1516,7 +1658,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                 <div className="flex flex-wrap items-center gap-1.5">
                   {(
                     [
-                      ['all', `全部 (${visitorSummary.uniqueDevices})`],
+                      ['all', `全部 (${visitorSummary.uniquePeople})`],
                       ['signed_in', `已登入玩家 (${visitorSummary.signedInCount})`],
                       ['guest', `未登入訪客 (${visitorSummary.guestCount})`],
                     ] as const
@@ -1551,26 +1693,30 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                 </div>
               </div>
 
-              {/* Visitor Device List */}
+              {/* Visitor List */}
               {filteredVisitors.length === 0 ? (
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center space-y-1">
                   <Users className="w-7 h-7 text-slate-300 mx-auto" />
-                  <p className="text-xs font-black text-slate-600">暫時未有符合條件的訪客紀錄</p>
+                  <p className="text-xs font-black text-slate-600">
+                    {!showAdminVisitors && visitorSummary.adminSelfDeviceCount > 0
+                      ? `暫未有其他真實訪客紀錄（已自動隱藏管理員自己的 ${visitorSummary.adminSelfDeviceCount} 台測試裝置）`
+                      : '暫時未有符合條件的訪客紀錄'}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                   {filteredVisitors.map((v) => {
-                    const isSelfDevice = v.deviceId === currentDeviceId;
-                    const isEditing = editingVisitorId === v.id;
-                    const isConfirmDelete = confirmDeleteVisitorId === v.id;
-                    const isBusy = busyVisitorId === v.id;
+                    const isEditing = editingVisitorId === v.primaryId;
+                    const isConfirmDelete = confirmDeleteVisitorId === v.primaryId;
+                    const isBusy = busyVisitorId === v.primaryId;
                     const matchedSpirit = SPIRIT_CHARACTER_OPTIONS.find((s) => s.name === v.displayName);
+                    const deviceSummaryText = v.deviceLabels.join('、');
 
                     return (
                       <div
-                        key={v.id}
+                        key={v.personKey}
                         className={`border rounded-2xl p-3 space-y-2 transition-all ${
-                          isSelfDevice
+                          v.hasCurrentDevice
                             ? 'bg-sky-50/70 border-sky-300'
                             : 'bg-white border-pink-100 hover:border-pink-200'
                         }`}
@@ -1609,15 +1755,25 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                                 >
                                   {v.isSignedInUser ? '已登入玩家' : '訪客'}
                                 </span>
-                                {isSelfDevice && (
+                                {v.isAdminSelf && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-black rounded-md bg-amber-100 text-amber-800">
+                                    管理員本人
+                                  </span>
+                                )}
+                                {v.hasCurrentDevice && (
                                   <span className="px-1.5 py-0.5 text-[10px] font-black rounded-md bg-sky-600 text-white">
                                     本機裝置
+                                  </span>
+                                )}
+                                {v.deviceIds.length > 1 && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-black rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                    已合併 {v.deviceIds.length} 個裝置/分頁
                                   </span>
                                 )}
                               </div>
 
                               <p className="text-[11px] font-bold text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <span>📱 {v.deviceLabel}</span>
+                                <span>📱 {deviceSummaryText}</span>
                                 <span aria-hidden="true">·</span>
                                 <span className="text-indigo-600 font-black">
                                   到訪 {v.visitCount} 次
@@ -1637,7 +1793,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                                 disabled={isBusy}
                                 onClick={() => {
                                   soundFx.playClick();
-                                  setEditingVisitorId(v.id);
+                                  setEditingVisitorId(v.primaryId);
                                   setEditingVisitorName(v.displayName);
                                   setConfirmDeleteVisitorId(null);
                                 }}
@@ -1651,7 +1807,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                                 disabled={isBusy}
                                 onClick={() => {
                                   soundFx.playClick();
-                                  setConfirmDeleteVisitorId(v.id);
+                                  setConfirmDeleteVisitorId(v.primaryId);
                                   setEditingVisitorId(null);
                                 }}
                                 className="px-2 py-1 text-[11px] font-black text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
@@ -1676,7 +1832,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                             <button
                               type="button"
                               disabled={isBusy}
-                              onClick={() => void handleRenameVisitor(v.id, editingVisitorName)}
+                              onClick={() => void handleRenameVisitor(v.primaryId, editingVisitorName)}
                               className="px-2.5 py-1.5 text-[11px] font-black text-white bg-sky-600 hover:bg-sky-700 rounded-lg cursor-pointer disabled:opacity-50"
                             >
                               儲存
@@ -1694,13 +1850,13 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                         {isConfirmDelete && (
                           <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-rose-100 bg-rose-50/70 rounded-lg px-2.5 py-1.5">
                             <span className="text-[11px] font-black text-rose-700">
-                              確定移除「{v.displayName}」（{v.deviceLabel}）的訪客紀錄？
+                              確定移除「{v.displayName}」（{deviceSummaryText}）的訪客紀錄？
                             </span>
                             <div className="flex items-center gap-1.5">
                               <button
                                 type="button"
                                 disabled={isBusy}
-                                onClick={() => void handleDeleteVisitor(v.id)}
+                                onClick={() => void handleDeleteVisitorPerson(v.primaryId, v.deviceIds)}
                                 className="px-2.5 py-1 text-[11px] font-black text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer disabled:opacity-50"
                               >
                                 確認移除

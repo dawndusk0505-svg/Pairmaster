@@ -206,6 +206,16 @@ function detectDeviceInfo(): { deviceLabel: string; deviceType: 'mobile' | 'tabl
   };
 }
 
+function isLikelyAutomatedBot(): boolean {
+  if (typeof navigator === 'undefined') return true;
+  if (navigator.webdriver) return true;
+  const ua = navigator.userAgent || '';
+  if (!ua || ua.length < 10) return true;
+  return /bot|crawl|spider|slurp|headless|lighthouse|pagespeed|puppeteer|playwright|phantom|facebookexternalhit|whatsapp|telegrambot|slackbot|discordbot|line-poker|bingpreview|googleweblight|mediapartners/i.test(
+    ua
+  );
+}
+
 export interface CloudUserScore {
   id: string;
   userId: string;
@@ -386,9 +396,11 @@ interface FirebaseContextValue {
   cancelScheduledNotice: (type: 'birthday' | 'confession', targetDate: string) => Promise<void>;
   currentDeviceId: string;
   visitors: VisitorRecord[];
+  externalVisitorCount: number;
   visitorsError: string | null;
   adminRenameVisitor: (deviceId: string, newName: string) => Promise<void>;
   adminDeleteVisitor: (deviceId: string) => Promise<void>;
+  adminDeleteVisitorsBatch: (deviceIds: string[]) => Promise<void>;
 }
 
 const FirebaseContext = createContext<FirebaseContextValue | null>(null);
@@ -882,9 +894,17 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Unique-per-device visitor tracking (same device updates its single /visitors/{deviceId} row)
   useEffect(() => {
     if (!authReady || isAuthBusy) return;
+    if (isLikelyAutomatedBot()) return;
 
     let cancelled = false;
+    let timerId: number | null = null;
+
     const trackCurrentDevice = async () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+
       let activeUser = auth.currentUser ?? user;
       if (!activeUser) {
         if (anonAuthDisabled || anonVisitAttemptedRef.current) return;
@@ -980,9 +1000,22 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     };
 
-    void trackCurrentDevice();
+    const scheduleTrack = () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (timerId !== null) window.clearTimeout(timerId);
+      // Require brief visible dwell so instant bot/prerender hits are excluded
+      timerId = window.setTimeout(() => {
+        void trackCurrentDevice();
+      }, 900);
+    };
+
+    scheduleTrack();
+    document.addEventListener('visibilitychange', scheduleTrack);
     return () => {
       cancelled = true;
+      if (timerId !== null) window.clearTimeout(timerId);
+      document.removeEventListener('visibilitychange', scheduleTrack);
     };
   }, [authReady, isAuthBusy, user, profileDisplayName, anonAuthDisabled]);
 
@@ -2228,8 +2261,45 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [user, reportFriendlyError]
   );
 
+  const adminDeleteVisitorsBatch = useCallback(
+    async (deviceIds: string[]) => {
+      if (!user || user.isAnonymous || !user.emailVerified || !isSuperAdminEmail(user.email)) {
+        return;
+      }
+      const cleanIds = Array.from(
+        new Set(deviceIds.map((id) => sanitizeId(id, 64, '')).filter(Boolean))
+      );
+      if (cleanIds.length === 0) return;
+      try {
+        await Promise.all(cleanIds.map((id) => deleteDoc(doc(db, 'visitors', id))));
+      } catch (err) {
+        try {
+          handleFirestoreError(err, OperationType.DELETE, 'visitors');
+        } catch (wrapped) {
+          reportFriendlyError(wrapped);
+          throw wrapped;
+        }
+      }
+    },
+    [user, reportFriendlyError]
+  );
+
   const isVerifiedGoogleUser = Boolean(user && !user.isAnonymous && user.emailVerified);
   const isSuperAdmin = Boolean(isVerifiedGoogleUser && isSuperAdminEmail(user?.email));
+
+  // Count unique external human visitors (excluding Super Admin's own devices & merging signed-in UIDs)
+  const externalVisitorCount = React.useMemo(() => {
+    if (!isSuperAdmin) return 0;
+    const seenKeys = new Set<string>();
+    for (const v of visitors) {
+      if (user?.uid && v.lastAuthUid === user.uid) continue;
+      if (v.deviceId === currentDeviceIdRef.current) continue;
+      const personKey = v.isSignedInUser && v.lastAuthUid ? `uid:${v.lastAuthUid}` : `dev:${v.deviceId}`;
+      seenKeys.add(personKey);
+    }
+    return seenKeys.size;
+  }, [isSuperAdmin, visitors, user?.uid]);
+
   const gameDisplayName = isVerifiedGoogleUser && user
     ? profileDisplayName ||
       (isSuperAdminEmail(user.email)
@@ -2286,9 +2356,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         cancelScheduledNotice,
         currentDeviceId: currentDeviceIdRef.current,
         visitors,
+        externalVisitorCount,
         visitorsError,
         adminRenameVisitor,
         adminDeleteVisitor,
+        adminDeleteVisitorsBatch,
       }}
     >
       {children}
