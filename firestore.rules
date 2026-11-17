@@ -197,12 +197,12 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
-    function isValidLeaderboardEntry(data) {
+    function isValidLeaderboardEntry(data, expectedUserId) {
       return data.keys().hasAll(['userId', 'displayName', 'gameMode', 'themeId', 'themeName', 'difficultyId', 'highScore', 'bestTimeSec', 'stars', 'isPublic', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly(['userId', 'displayName', 'gameMode', 'themeId', 'themeName', 'difficultyId', 'highScore', 'bestTimeSec', 'stars', 'isPublic', 'createdAt', 'updatedAt'])
         && data.userId is string
         && isValidId(data.userId)
-        && data.userId == request.auth.uid
+        && data.userId == expectedUserId
         && data.displayName is string
         && data.displayName.size() >= 1
         && data.displayName.size() <= 60
@@ -429,13 +429,14 @@ service cloud.firestore {
       allow list: if resource.data.isPublic == true;
       allow create: if canWriteLeaderboard(incoming())
         && isValidId(entryId)
-        && isValidLeaderboardEntry(incoming())
+        && isValidLeaderboardEntry(incoming(), request.auth.uid)
         && entryId == (request.auth.uid + '_' + incoming().gameMode + '_' + incoming().difficultyId + '_' + incoming().themeId)
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
-      allow update: if canWriteLeaderboard(incoming())
+      allow update: if (
+        canWriteLeaderboard(incoming())
         && isValidId(entryId)
-        && isValidLeaderboardEntry(incoming())
+        && isValidLeaderboardEntry(incoming(), request.auth.uid)
         && existing().userId == request.auth.uid
         && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'themeName', 'highScore', 'bestTimeSec', 'stars', 'isPublic', 'updatedAt'])
         && incoming().userId == existing().userId
@@ -443,10 +444,31 @@ service cloud.firestore {
         && incoming().themeId == existing().themeId
         && incoming().difficultyId == existing().difficultyId
         && incoming().createdAt == existing().createdAt
-        && incoming().updatedAt == request.time;
-      allow delete: if isVerifiedUser()
+        && incoming().updatedAt == request.time
+      ) || (
+        isAdmin()
         && isValidId(entryId)
-        && existing().userId == request.auth.uid;
+        && isValidLeaderboardEntry(incoming(), existing().userId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt'])
+        && incoming().gameMode == existing().gameMode
+        && incoming().themeId == existing().themeId
+        && incoming().themeName == existing().themeName
+        && incoming().difficultyId == existing().difficultyId
+        && incoming().highScore == existing().highScore
+        && incoming().bestTimeSec == existing().bestTimeSec
+        && incoming().stars == existing().stars
+        && incoming().isPublic == existing().isPublic
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+      );
+      allow delete: if (
+        (isVerifiedUser() || isAnonymousUser())
+        && isValidId(entryId)
+        && existing().userId == request.auth.uid
+      ) || (
+        isAdmin()
+        && isValidId(entryId)
+      );
     }
 
     match /dailyNotices/{noticeId} {

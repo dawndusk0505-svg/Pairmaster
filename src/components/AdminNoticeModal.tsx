@@ -18,10 +18,14 @@ import {
   Award,
   Camera,
   Music,
+  Tag,
+  Pencil,
+  Search,
 } from 'lucide-react';
 import {
   ANONYMOUS_DISPLAY_NAME,
   NoticeRequestRecord,
+  SPIRIT_CHARACTER_OPTIONS,
   getMsUntilHongKongMidnight,
   useFirebase,
 } from '../contexts/FirebaseContext';
@@ -33,7 +37,7 @@ interface AdminNoticeModalProps {
   onClose: () => void;
 }
 
-type AdminTab = 'requests' | 'scheduled' | 'birthday' | 'confession' | 'admins';
+type AdminTab = 'requests' | 'scheduled' | 'birthday' | 'confession' | 'names' | 'admins';
 
 function formatCountdown(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -63,6 +67,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
     user,
     isAdmin,
     isSuperAdmin,
+    gameDisplayName,
     todayHkDate,
     todayBirthdayNotice,
     todayConfessionNotice,
@@ -77,6 +82,10 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
     approveNoticeRequest,
     rejectNoticeRequest,
     cancelScheduledNotice,
+    leaderboardEntries,
+    updateMyGameDisplayName,
+    adminUpdateLeaderboardDisplayName,
+    adminDeleteLeaderboardEntry,
   } = useFirebase();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('birthday');
@@ -90,6 +99,13 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
   const [isPreviewingSong, setIsPreviewingSong] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [msLeft, setMsLeft] = useState<number>(() => getMsUntilHongKongMidnight());
+
+  const [myNameInput, setMyNameInput] = useState('');
+  const [nameSearchQuery, setNameSearchQuery] = useState('');
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editingEntryName, setEditingEntryName] = useState('');
+  const [confirmDeleteEntryId, setConfirmDeleteEntryId] = useState<string | null>(null);
+  const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
 
   const [newAdminUid, setNewAdminUid] = useState('');
   const [newAdminNote, setNewAdminNote] = useState('');
@@ -129,8 +145,12 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
       setSenderName(todayConfessionNotice?.senderName ?? '');
       setMessage(todayConfessionNotice?.message ?? '');
       setPhotoDataUrl(todayConfessionNotice?.photoDataUrl ?? '');
+    } else if (activeTab === 'names') {
+      setMyNameInput(gameDisplayName);
+      setEditingEntryId(null);
+      setConfirmDeleteEntryId(null);
     }
-  }, [isOpen, activeTab, todayBirthdayNotice, todayConfessionNotice]);
+  }, [isOpen, activeTab, todayBirthdayNotice, todayConfessionNotice, gameDisplayName]);
 
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -333,6 +353,76 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
     }
   };
 
+  const handleApplyMyGameName = async (targetName: string, successText?: string) => {
+    const cleanName = targetName.trim() || ANONYMOUS_DISPLAY_NAME;
+    setIsSaving(true);
+    setFeedback(null);
+    try {
+      await updateMyGameDisplayName(cleanName);
+      setMyNameInput(cleanName);
+      soundFx.playClick();
+      setFeedback({
+        type: 'ok',
+        text: successText || `已將你嘅遊戲名稱更新為「${cleanName}」，並同步至戰績榜！`,
+      });
+    } catch {
+      setFeedback({ type: 'err', text: '更新遊戲名稱失敗，請稍後再試。' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRenameLeaderboardEntry = async (entryId: string, nextName: string, successText?: string) => {
+    const cleanName = nextName.trim() || ANONYMOUS_DISPLAY_NAME;
+    setBusyEntryId(entryId);
+    setFeedback(null);
+    try {
+      await adminUpdateLeaderboardDisplayName(entryId, cleanName);
+      setEditingEntryId(null);
+      soundFx.playClick();
+      setFeedback({
+        type: 'ok',
+        text: successText || `已將該玩家戰績榜名稱修改為「${cleanName}」！`,
+      });
+    } catch {
+      setFeedback({ type: 'err', text: '修改名稱失敗，請確認你擁有管理員權限並連線正常。' });
+    } finally {
+      setBusyEntryId(null);
+    }
+  };
+
+  const handleDeleteLeaderboardEntry = async (entryId: string) => {
+    setBusyEntryId(entryId);
+    setFeedback(null);
+    try {
+      await adminDeleteLeaderboardEntry(entryId);
+      setConfirmDeleteEntryId(null);
+      soundFx.playClick();
+      setFeedback({
+        type: 'ok',
+        text: '已從全服戰績榜永久刪除該項紀錄！',
+      });
+    } catch {
+      setFeedback({ type: 'err', text: '刪除紀錄失敗，請稍後再試。' });
+    } finally {
+      setBusyEntryId(null);
+    }
+  };
+
+  const filteredLeaderboardForAdmin = useMemo(() => {
+    const q = nameSearchQuery.trim().toLowerCase();
+    return [...leaderboardEntries]
+      .sort((a, b) => b.highScore - a.highScore)
+      .filter((entry) => {
+        if (!q) return true;
+        return (
+          entry.displayName.toLowerCase().includes(q) ||
+          entry.themeName.toLowerCase().includes(q) ||
+          entry.difficultyId.toLowerCase().includes(q)
+        );
+      });
+  }, [leaderboardEntries, nameSearchQuery]);
+
   const upcomingScheduled = scheduledNotices.filter((s) => s.targetDate >= todayHkDate);
 
   return (
@@ -455,6 +545,22 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
           >
             <HeartHandshake className="w-3.5 h-3.5" />
             <span>表白板</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playClick();
+              setActiveTab('names');
+            }}
+            className={`flex-1 min-w-[90px] py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer ${
+              activeTab === 'names'
+                ? 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-sm'
+                : 'text-slate-700 hover:text-pink-600'
+            }`}
+          >
+            <Tag className="w-3.5 h-3.5" />
+            <span>名稱管理</span>
           </button>
 
           {isSuperAdmin && (
@@ -949,7 +1055,283 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
             </form>
           )}
 
-          {/* TAB 5: Delegated Admin UIDs */}
+          {/* TAB 5: Name Management (Self Spirit Name + Admin Edit/Delete Player Names) */}
+          {activeTab === 'names' && (
+            <div className="space-y-4">
+              {/* Section 1: My In-Game Spirit Name */}
+              <div className="bg-gradient-to-br from-pink-50/90 to-violet-50/70 border-2 border-pink-200 rounded-2xl p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">
+                      🐰 我的遊戲精靈角色稱呼
+                    </h3>
+                    <p className="text-[11px] font-bold text-slate-600">
+                      目前遊戲內顯示名稱：<span className="text-pink-600 font-black">{gameDisplayName}</span>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() =>
+                      void handleApplyMyGameName(
+                        ANONYMOUS_DISPLAY_NAME,
+                        `已刪除你嘅遊戲顯示名稱，現已改為匿名「${ANONYMOUS_DISPLAY_NAME}」！`
+                      )
+                    }
+                    className="px-2.5 py-1.5 text-[11px] font-black text-rose-600 bg-white hover:bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-1 cursor-pointer disabled:opacity-60"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>刪除名稱（變匿名）</span>
+                  </button>
+                </div>
+
+                {/* 12 Candy Spirit Quick Picker */}
+                <div>
+                  <p className="text-[11px] font-black text-pink-700 mb-1.5">
+                    一鍵切換成 12 位糖果小精靈角色名：
+                  </p>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                    {SPIRIT_CHARACTER_OPTIONS.map((spirit) => {
+                      const isCurrent = gameDisplayName === spirit.name;
+                      return (
+                        <button
+                          key={spirit.id}
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => void handleApplyMyGameName(spirit.name)}
+                          className={`p-1.5 rounded-xl border text-left flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-60 ${
+                            isCurrent
+                              ? 'bg-pink-500 text-white border-pink-500 shadow-xs'
+                              : 'bg-white hover:bg-pink-50 border-pink-200 text-slate-800'
+                          }`}
+                        >
+                          {spirit.imageUrl ? (
+                            <img
+                              src={spirit.imageUrl}
+                              alt={spirit.name}
+                              className="w-6 h-6 rounded-lg object-cover shrink-0 border border-pink-200"
+                            />
+                          ) : (
+                            <span className="text-sm shrink-0">{spirit.symbol}</span>
+                          )}
+                          <span className="text-[11px] font-black truncate">{spirit.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Custom Name Input */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleApplyMyGameName(myNameInput);
+                  }}
+                  className="flex flex-wrap sm:flex-nowrap items-center gap-2 pt-1"
+                >
+                  <input
+                    type="text"
+                    maxLength={60}
+                    value={myNameInput}
+                    onChange={(e) => setMyNameInput(e.target.value)}
+                    placeholder="輸入你想顯示嘅精靈或自訂名稱（留空即變匿名）"
+                    className="flex-1 min-w-0 px-3 py-2 text-xs font-bold text-slate-800 bg-white border border-pink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-400"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="px-3.5 py-2 text-xs font-black text-white bg-gradient-to-r from-violet-500 to-pink-500 hover:from-violet-600 hover:to-pink-600 rounded-xl shadow-xs flex items-center gap-1 cursor-pointer disabled:opacity-60 shrink-0"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>修改我的名稱</span>
+                  </button>
+                </form>
+              </div>
+
+              {/* Section 2: Admin Leaderboard Name Management */}
+              <div className="bg-white border-2 border-pink-200 rounded-2xl p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">
+                      🛠️ 全服戰績榜名稱管理（修改／刪除）
+                    </h3>
+                    <p className="text-[11px] font-bold text-slate-500">
+                      共 {leaderboardEntries.length} 筆公開戰績 · 可將玩家名稱改名、清成匿名或刪除紀錄
+                    </p>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={nameSearchQuery}
+                    onChange={(e) => setNameSearchQuery(e.target.value)}
+                    placeholder="搜尋玩家名稱、關卡或主題..."
+                    className="w-full pl-8 pr-3 py-2 text-xs font-bold bg-pink-50/40 border border-pink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-400"
+                  />
+                </div>
+
+                {filteredLeaderboardForAdmin.length === 0 ? (
+                  <p className="text-xs text-slate-500 font-bold bg-slate-50 rounded-xl p-4 text-center">
+                    找不到符合的戰績榜紀錄
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {filteredLeaderboardForAdmin.map((entry) => {
+                      const isEditing = editingEntryId === entry.id;
+                      const isConfirmDelete = confirmDeleteEntryId === entry.id;
+                      const isBusy = busyEntryId === entry.id;
+                      return (
+                        <div
+                          key={entry.id}
+                          className="border border-pink-100 rounded-xl p-2.5 bg-pink-50/30 space-y-2"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-black text-slate-900 truncate">
+                                  {entry.displayName}
+                                </span>
+                                {user?.uid === entry.userId && (
+                                  <span className="text-[10px] font-black bg-pink-500 text-white px-1.5 py-0.5 rounded-md">
+                                    我
+                                  </span>
+                                )}
+                                <span className="text-[11px] font-mono font-black text-rose-600">
+                                  {entry.highScore} 分
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500">
+                                {entry.gameMode === 'flip' ? '翻牌記憶' : '連連看'} · {entry.themeName} · {entry.difficultyId}
+                              </p>
+                            </div>
+
+                            {!isEditing && !isConfirmDelete && (
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => {
+                                    soundFx.playClick();
+                                    setEditingEntryId(entry.id);
+                                    setEditingEntryName(entry.displayName);
+                                    setConfirmDeleteEntryId(null);
+                                  }}
+                                  className="px-2 py-1 text-[11px] font-black text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                  <span>修改</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() =>
+                                    void handleRenameLeaderboardEntry(
+                                      entry.id,
+                                      ANONYMOUS_DISPLAY_NAME,
+                                      `已將該玩家名字刪除並改為「${ANONYMOUS_DISPLAY_NAME}」！`
+                                    )
+                                  }
+                                  className="px-2 py-1 text-[11px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg cursor-pointer disabled:opacity-50"
+                                >
+                                  刪除名字
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => {
+                                    soundFx.playClick();
+                                    setConfirmDeleteEntryId(entry.id);
+                                    setEditingEntryId(null);
+                                  }}
+                                  className="px-2 py-1 text-[11px] font-black text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>刪紀錄</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {isEditing && (
+                            <div className="space-y-1.5 pt-1 border-t border-pink-100">
+                              <div className="flex flex-wrap gap-1">
+                                {SPIRIT_CHARACTER_OPTIONS.slice(0, 6).map((sp) => (
+                                  <button
+                                    key={sp.id}
+                                    type="button"
+                                    onClick={() => setEditingEntryName(sp.name)}
+                                    className="px-1.5 py-0.5 text-[10px] font-bold bg-white hover:bg-pink-100 border border-pink-200 rounded-md text-slate-700 cursor-pointer"
+                                  >
+                                    {sp.symbol} {sp.name}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  maxLength={60}
+                                  value={editingEntryName}
+                                  onChange={(e) => setEditingEntryName(e.target.value)}
+                                  placeholder="輸入修改後名稱"
+                                  className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-bold bg-white border border-violet-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() =>
+                                    void handleRenameLeaderboardEntry(entry.id, editingEntryName)
+                                  }
+                                  className="px-2.5 py-1.5 text-[11px] font-black text-white bg-violet-600 hover:bg-violet-700 rounded-lg cursor-pointer disabled:opacity-50"
+                                >
+                                  儲存
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingEntryId(null)}
+                                  className="px-2 py-1.5 text-[11px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg cursor-pointer"
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {isConfirmDelete && (
+                            <div className="flex items-center justify-between gap-2 pt-1 border-t border-rose-100 bg-rose-50/70 rounded-lg px-2.5 py-1.5">
+                              <span className="text-[11px] font-black text-rose-700">
+                                確定要永久刪除「{entry.displayName}」此項戰績？
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => void handleDeleteLeaderboardEntry(entry.id)}
+                                  className="px-2.5 py-1 text-[11px] font-black text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer disabled:opacity-50"
+                                >
+                                  確認刪除
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteEntryId(null)}
+                                  className="px-2 py-1 text-[11px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg cursor-pointer"
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: Delegated Admin UIDs */}
           {activeTab === 'admins' && (
             <div className="space-y-3.5">
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1.5 text-xs">

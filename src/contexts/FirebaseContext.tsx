@@ -11,6 +11,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
@@ -35,6 +36,13 @@ const ID_REGEX = /^[a-zA-Z0-9_\-]+$/;
 const MBTI_REGEX = /^[EI][SN][TF][JP]$/;
 export const SUPER_ADMIN_EMAIL = 'yui1218.cc@gmail.com';
 export const ANONYMOUS_DISPLAY_NAME = '唔知邊個(unknown)';
+export const DEFAULT_ADMIN_SPIRIT_NAME = '蜜桃粉兔';
+export const SPIRIT_CHARACTER_OPTIONS = CANDY_SPIRIT_ITEMS.map((item) => ({
+  id: item.id,
+  name: item.name,
+  symbol: item.symbol,
+  imageUrl: item.imageUrl,
+}));
 
 function isSuperAdminEmail(email: string | null | undefined): boolean {
   return (email ?? '').trim().toLowerCase() === SUPER_ADMIN_EMAIL;
@@ -232,12 +240,16 @@ interface FirebaseContextValue {
   isVerifiedGoogleUser: boolean;
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  gameDisplayName: string;
   authReady: boolean;
   isAuthBusy: boolean;
   cloudError: string | null;
   clearCloudError: () => void;
   signInWithGoogle: () => Promise<void>;
   signOutUser: () => Promise<void>;
+  updateMyGameDisplayName: (newName: string) => Promise<void>;
+  adminUpdateLeaderboardDisplayName: (entryId: string, newName: string) => Promise<void>;
+  adminDeleteLeaderboardEntry: (entryId: string) => Promise<void>;
   scoresMap: Record<string, CloudUserScore>;
   getCloudHighScore: (gameMode: 'flip' | 'link', difficultyId: string, themeId: string) => number;
   leaderboardEntries: CloudLeaderboardEntry[];
@@ -348,6 +360,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [cloudCustomTheme, setCloudCustomTheme] = useState<MatchTheme | null>(null);
   const [compatibilityLogs, setCompatibilityLogs] = useState<CloudCompatibilityLog[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [profileDisplayName, setProfileDisplayName] = useState<string>('');
   const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
   const [rawNotices, setRawNotices] = useState<DailyNotice[]>([]);
   const [todayScheduledBirthday, setTodayScheduledBirthday] = useState<DailyNotice | null>(null);
@@ -359,7 +372,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [todayHkDate, setTodayHkDate] = useState<string>(() => getHongKongDateString());
 
   const profileEnsuredUidRef = useRef<string | null>(null);
-  const inFlightProfileRef = useRef<{ uid: string; promise: Promise<void> } | null>(null);
+  const resolvedProfileNameRef = useRef<string>('');
+  const inFlightProfileRef = useRef<{ uid: string; promise: Promise<string> } | null>(null);
 
   const clearCloudError = useCallback(() => setCloudError(null), []);
 
@@ -382,56 +396,137 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
-  const ensureUserProfile = useCallback(async (currentUser: User) => {
-    if (currentUser.isAnonymous || !currentUser.emailVerified) return;
-    if (profileEnsuredUidRef.current === currentUser.uid) return;
-    if (inFlightProfileRef.current?.uid === currentUser.uid) {
-      return inFlightProfileRef.current.promise;
-    }
-
-    const run = (async () => {
-      const path = `users/${currentUser.uid}`;
-      const userRef = doc(db, 'users', currentUser.uid);
-      const displayName = clampString(currentUser.displayName, 60, '糖果玩家');
-      const photoURL = currentUser.photoURL ? currentUser.photoURL.slice(0, 500) : '';
-
+  const syncOwnLeaderboardDisplayName = useCallback(
+    async (uid: string, nextDisplayName: string, onlyReplaceNames?: string[]) => {
+      const lbPath = 'leaderboard';
       try {
-        const snap = await getDoc(userRef);
-        if (!snap.exists()) {
-          const payload: Record<string, unknown> = {
-            uid: currentUser.uid,
-            displayName,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          };
-          if (photoURL) payload.photoURL = photoURL;
+        const snap = await getDocs(
+          query(collection(db, lbPath), where('userId', '==', uid), limit(100))
+        );
+        const tasks: Promise<void>[] = [];
+        snap.forEach((docSnap) => {
+          const curName = String(docSnap.data().displayName ?? '');
+          const shouldUpdate = onlyReplaceNames
+            ? onlyReplaceNames.includes(curName) && curName !== nextDisplayName
+            : curName !== nextDisplayName;
+          if (shouldUpdate) {
+            tasks.push(
+              updateDoc(doc(db, lbPath, docSnap.id), {
+                displayName: nextDisplayName,
+                updatedAt: serverTimestamp(),
+              })
+            );
+          }
+        });
+        if (tasks.length > 0) {
+          await Promise.all(tasks);
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, lbPath);
+      }
+    },
+    []
+  );
 
-          await setDoc(userRef, payload);
-        } else {
-          const existing = snap.data();
-          if (existing.displayName !== displayName || (photoURL && existing.photoURL !== photoURL)) {
-            const updates: Record<string, unknown> = {
-              displayName,
+  const ensureUserProfile = useCallback(
+    async (currentUser: User): Promise<string> => {
+      if (currentUser.isAnonymous || !currentUser.emailVerified) {
+        return ANONYMOUS_DISPLAY_NAME;
+      }
+      if (profileEnsuredUidRef.current === currentUser.uid && resolvedProfileNameRef.current) {
+        return resolvedProfileNameRef.current;
+      }
+      if (inFlightProfileRef.current?.uid === currentUser.uid) {
+        return inFlightProfileRef.current.promise;
+      }
+
+      const run = (async (): Promise<string> => {
+        const path = `users/${currentUser.uid}`;
+        const userRef = doc(db, 'users', currentUser.uid);
+        const rawGoogleName = clampString(currentUser.displayName, 60, '糖果玩家');
+        const isSuper = isSuperAdminEmail(currentUser.email);
+        const defaultName = isSuper ? DEFAULT_ADMIN_SPIRIT_NAME : rawGoogleName;
+        const photoURL = currentUser.photoURL ? currentUser.photoURL.slice(0, 500) : '';
+
+        try {
+          const snap = await getDoc(userRef);
+          let finalName = defaultName;
+
+          if (!snap.exists()) {
+            const payload: Record<string, unknown> = {
+              uid: currentUser.uid,
+              displayName: defaultName,
+              createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             };
-            if (photoURL) updates.photoURL = photoURL;
-            await updateDoc(userRef, updates);
+            if (photoURL) payload.photoURL = photoURL;
+
+            await setDoc(userRef, payload);
+            if (isSuper) {
+              void syncOwnLeaderboardDisplayName(currentUser.uid, defaultName, [
+                rawGoogleName,
+                '糖果玩家',
+              ]).catch(() => {
+                // non-blocking migration
+              });
+            }
+          } else {
+            const existing = snap.data();
+            const existingName =
+              typeof existing.displayName === 'string' ? existing.displayName.trim() : '';
+
+            // Auto-migrate super admin from real Google name to spirit character name,
+            // while preserving any custom or spirit character name chosen later.
+            const needsSuperMigration =
+              isSuper &&
+              (!existingName || existingName === rawGoogleName || existingName === '糖果玩家');
+
+            finalName = needsSuperMigration
+              ? DEFAULT_ADMIN_SPIRIT_NAME
+              : existingName || defaultName;
+
+            const updates: Record<string, unknown> = {};
+            if (existingName !== finalName) {
+              updates.displayName = finalName;
+            }
+            if (photoURL && existing.photoURL !== photoURL) {
+              updates.photoURL = photoURL;
+            }
+            if (Object.keys(updates).length > 0) {
+              updates.updatedAt = serverTimestamp();
+              await updateDoc(userRef, updates);
+            }
+
+            if (isSuper) {
+              void syncOwnLeaderboardDisplayName(currentUser.uid, finalName, [
+                rawGoogleName,
+                '糖果玩家',
+              ]).catch(() => {
+                // non-blocking migration
+              });
+            }
+          }
+
+          profileEnsuredUidRef.current = currentUser.uid;
+          resolvedProfileNameRef.current = finalName;
+          setProfileDisplayName(finalName);
+          setCloudError(null);
+          return finalName;
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, path);
+          return defaultName;
+        } finally {
+          if (inFlightProfileRef.current?.uid === currentUser.uid) {
+            inFlightProfileRef.current = null;
           }
         }
-        profileEnsuredUidRef.current = currentUser.uid;
-        setCloudError(null);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, path);
-      } finally {
-        if (inFlightProfileRef.current?.uid === currentUser.uid) {
-          inFlightProfileRef.current = null;
-        }
-      }
-    })();
+      })();
 
-    inFlightProfileRef.current = { uid: currentUser.uid, promise: run };
-    return run;
-  }, []);
+      inFlightProfileRef.current = { uid: currentUser.uid, promise: run };
+      return run;
+    },
+    [syncOwnLeaderboardDisplayName]
+  );
 
   useEffect(() => {
     const syncDate = () => {
@@ -537,7 +632,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setAuthReady(true);
       if (!currentUser || currentUser.isAnonymous || !currentUser.emailVerified) {
         profileEnsuredUidRef.current = null;
+        resolvedProfileNameRef.current = '';
         inFlightProfileRef.current = null;
+        setProfileDisplayName('');
         setScoresMap({});
         setCloudCustomTheme(null);
         setCompatibilityLogs([]);
@@ -987,12 +1084,15 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           typeof input.maxCombo === 'number'
             ? Math.min(500, Math.max(1, Math.round(input.maxCombo)))
             : undefined;
-        const displayName = isGoogleAccount
-          ? clampString(activeUser.displayName, 60, '糖果玩家')
-          : ANONYMOUS_DISPLAY_NAME;
+        let displayName = ANONYMOUS_DISPLAY_NAME;
 
         if (isGoogleAccount) {
-          await ensureUserProfile(activeUser);
+          const resolvedName = await ensureUserProfile(activeUser);
+          displayName = clampString(
+            resolvedName,
+            60,
+            isSuperAdminEmail(activeUser.email) ? DEFAULT_ADMIN_SPIRIT_NAME : '糖果玩家'
+          );
 
           const scoreDocId = `${safeMode}_${safeDifficultyId}_${safeThemeId}`;
           const scorePath = `users/${activeUser.uid}/scores/${scoreDocId}`;
@@ -1080,19 +1180,33 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           } catch (err) {
             handleFirestoreError(err, OperationType.CREATE, lbPath);
           }
-        } else if (safeScore > prevLbHigh) {
-          try {
-            await updateDoc(lbRef, {
-              displayName,
-              themeName: safeThemeName,
-              highScore: safeScore,
-              bestTimeSec: safeTime,
-              stars: safeStars,
-              isPublic: true,
-              updatedAt: serverTimestamp(),
-            });
-          } catch (err) {
-            handleFirestoreError(err, OperationType.UPDATE, lbPath);
+        } else {
+          const existingData = existingLbSnap.data();
+          const shouldUpdateScore = safeScore > prevLbHigh;
+          const shouldSyncName = existingData.displayName !== displayName;
+          if (shouldUpdateScore) {
+            try {
+              await updateDoc(lbRef, {
+                displayName,
+                themeName: safeThemeName,
+                highScore: safeScore,
+                bestTimeSec: safeTime,
+                stars: safeStars,
+                isPublic: true,
+                updatedAt: serverTimestamp(),
+              });
+            } catch (err) {
+              handleFirestoreError(err, OperationType.UPDATE, lbPath);
+            }
+          } else if (shouldSyncName) {
+            try {
+              await updateDoc(lbRef, {
+                displayName,
+                updatedAt: serverTimestamp(),
+              });
+            } catch (err) {
+              handleFirestoreError(err, OperationType.UPDATE, lbPath);
+            }
           }
         }
 
@@ -1695,8 +1809,100 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [user, reportFriendlyError]
   );
 
+  const updateMyGameDisplayName = useCallback(
+    async (newName: string) => {
+      if (!user || user.isAnonymous || !user.emailVerified) return;
+      const safeName = clampString(newName, 60, ANONYMOUS_DISPLAY_NAME);
+      const userPath = `users/${user.uid}`;
+      try {
+        await ensureUserProfile(user);
+        try {
+          await updateDoc(doc(db, 'users', user.uid), {
+            displayName: safeName,
+            updatedAt: serverTimestamp(),
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, userPath);
+        }
+        resolvedProfileNameRef.current = safeName;
+        setProfileDisplayName(safeName);
+        await syncOwnLeaderboardDisplayName(user.uid, safeName);
+      } catch (err) {
+        reportFriendlyError(err);
+        throw err;
+      }
+    },
+    [user, ensureUserProfile, syncOwnLeaderboardDisplayName, reportFriendlyError]
+  );
+
+  const adminUpdateLeaderboardDisplayName = useCallback(
+    async (entryId: string, newName: string) => {
+      if (!user || user.isAnonymous || !user.emailVerified || !isAdmin) return;
+      const safeEntryId = sanitizeId(entryId, 128, '');
+      if (!safeEntryId) return;
+      const safeName = clampString(newName, 60, ANONYMOUS_DISPLAY_NAME);
+      const lbPath = `leaderboard/${safeEntryId}`;
+
+      try {
+        try {
+          await updateDoc(doc(db, 'leaderboard', safeEntryId), {
+            displayName: safeName,
+            updatedAt: serverTimestamp(),
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, lbPath);
+        }
+
+        const matchedEntry = leaderboardEntries.find((e) => e.id === safeEntryId);
+        if (matchedEntry && matchedEntry.userId === user.uid) {
+          try {
+            await updateDoc(doc(db, 'users', user.uid), {
+              displayName: safeName,
+              updatedAt: serverTimestamp(),
+            });
+            resolvedProfileNameRef.current = safeName;
+            setProfileDisplayName(safeName);
+          } catch {
+            // non-blocking self profile sync
+          }
+        }
+      } catch (err) {
+        reportFriendlyError(err);
+        throw err;
+      }
+    },
+    [user, isAdmin, leaderboardEntries, reportFriendlyError]
+  );
+
+  const adminDeleteLeaderboardEntry = useCallback(
+    async (entryId: string) => {
+      if (!user || user.isAnonymous || !user.emailVerified || !isAdmin) return;
+      const safeEntryId = sanitizeId(entryId, 128, '');
+      if (!safeEntryId) return;
+      const lbPath = `leaderboard/${safeEntryId}`;
+
+      try {
+        await deleteDoc(doc(db, 'leaderboard', safeEntryId));
+      } catch (err) {
+        try {
+          handleFirestoreError(err, OperationType.DELETE, lbPath);
+        } catch (wrapped) {
+          reportFriendlyError(wrapped);
+          throw wrapped;
+        }
+      }
+    },
+    [user, isAdmin, reportFriendlyError]
+  );
+
   const isVerifiedGoogleUser = Boolean(user && !user.isAnonymous && user.emailVerified);
   const isSuperAdmin = Boolean(isVerifiedGoogleUser && isSuperAdminEmail(user?.email));
+  const gameDisplayName = isVerifiedGoogleUser && user
+    ? profileDisplayName ||
+      (isSuperAdminEmail(user.email)
+        ? DEFAULT_ADMIN_SPIRIT_NAME
+        : clampString(user.displayName, 60, '糖果玩家'))
+    : ANONYMOUS_DISPLAY_NAME;
 
   return (
     <FirebaseContext.Provider
@@ -1705,12 +1911,16 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         isVerifiedGoogleUser,
         isAdmin: isVerifiedGoogleUser && isAdmin,
         isSuperAdmin,
+        gameDisplayName,
         authReady,
         isAuthBusy,
         cloudError,
         clearCloudError,
         signInWithGoogle,
         signOutUser,
+        updateMyGameDisplayName,
+        adminUpdateLeaderboardDisplayName,
+        adminDeleteLeaderboardEntry,
         scoresMap,
         getCloudHighScore,
         leaderboardEntries,

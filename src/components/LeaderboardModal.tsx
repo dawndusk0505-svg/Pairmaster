@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { X, Trophy, Crown, Clock, Cloud, Sparkles, LogIn, Medal, Smartphone, Copy, Check, AlertCircle } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
-import { MATCH_THEMES } from '../data/matchThemes';
+import { CANDY_SPIRIT_ITEMS, MATCH_THEMES } from '../data/matchThemes';
 import { soundFx } from '../utils/audio';
 
 interface LeaderboardModalProps {
@@ -94,6 +94,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   const {
     user,
     isVerifiedGoogleUser,
+    gameDisplayName,
     signInWithGoogle,
     isAuthBusy,
     scoresMap,
@@ -102,6 +103,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     leaderboardError,
     anonAuthDisabled,
   } = useFirebase();
+  const matchedSpirit = CANDY_SPIRIT_ITEMS.find((s) => s.name === gameDisplayName);
   const [activeTab, setActiveTab] = useState<'global' | 'mine'>(initialTab);
   const [filterMode, setFilterMode] = useState<'all' | 'flip' | 'link'>('all');
   const [copiedUid, setCopiedUid] = useState(false);
@@ -255,21 +257,28 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           {isVerifiedGoogleUser && user ? (
             <div className="flex items-center justify-between w-full gap-2.5 flex-wrap">
               <div className="flex items-center gap-2.5">
-                {user.photoURL ? (
+                {matchedSpirit?.imageUrl ? (
+                  <img
+                    src={matchedSpirit.imageUrl}
+                    alt={gameDisplayName}
+                    referrerPolicy="no-referrer"
+                    className="w-9 h-9 rounded-xl border border-pink-300 object-cover"
+                  />
+                ) : user.photoURL ? (
                   <img
                     src={user.photoURL}
-                    alt={user.displayName || '玩家頭像'}
+                    alt={gameDisplayName}
                     referrerPolicy="no-referrer"
                     className="w-9 h-9 rounded-xl border border-pink-300 object-cover"
                   />
                 ) : (
                   <div className="w-9 h-9 rounded-xl bg-pink-200 text-pink-700 font-black flex items-center justify-center text-sm">
-                    {(user.displayName || '玩')[0]}
+                    {(gameDisplayName || '玩')[0]}
                   </div>
                 )}
                 <div>
                   <p className="text-xs font-black text-slate-800">
-                    {user.displayName || '糖果玩家'}
+                    {gameDisplayName}
                   </p>
                   <p className="text-[11px] font-bold text-pink-600">
                     已累積 {allPersonalCount} 項關卡最高紀錄（雲端已保存 {Object.keys(scoresMap).length} 項）

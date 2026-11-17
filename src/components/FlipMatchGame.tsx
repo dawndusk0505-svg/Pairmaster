@@ -7,6 +7,8 @@ import { soundFx } from '../utils/audio';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { usePreloadedThemeImages } from '../utils/imagePreload';
 
+type CardFlipPhase = 'none' | 'opening' | 'mismatch_wait' | 'folding_in' | 'unfolding_back';
+
 interface CardItem {
   uid: string;
   id: string;
@@ -16,8 +18,7 @@ interface CardItem {
   imageUrl?: string;
   isFlipped: boolean;
   isMatched: boolean;
-  isMismatching?: boolean;
-  isFlippingInward?: boolean;
+  flipPhase?: CardFlipPhase;
 }
 
 interface FloatingMatchEmoji {
@@ -296,10 +297,17 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
     const newFlipped = [...flippedIndicesRef.current, index];
     flippedIndicesRef.current = newFlipped;
     setFlippedIndices(newFlipped);
-    setCards((prev) => prev.map((c, i) => (i === index ? { ...c, isFlipped: true } : c)));
+    setCards((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, isFlipped: true, flipPhase: 'opening' } : c))
+    );
 
     if (newFlipped.length === 1) {
       soundFx.playCardFlip();
+      scheduleTimeout(() => {
+        setCards((prev) =>
+          prev.map((c, i) => (i === index && c.flipPhase === 'opening' ? { ...c, flipPhase: 'none' } : c))
+        );
+      }, 230);
       return;
     }
 
@@ -356,7 +364,9 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
         scheduleTimeout(() => {
           setCards((prev) =>
             prev.map((c, i) =>
-              i === firstIdx || i === secondIdx ? { ...c, isMatched: true, isFlipped: true } : c
+              i === firstIdx || i === secondIdx
+                ? { ...c, isMatched: true, isFlipped: true, flipPhase: 'none' }
+                : c
             )
           );
           flippedIndicesRef.current = [];
@@ -369,40 +379,49 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
           if (nextMatched === difficulty.totalCards / 2) {
             handleVictory(scoreRef.current);
           }
-        }, 300);
+        }, 280);
       } else {
         soundFx.playMismatch();
         setCombo(1);
 
-        // Phase 1: Futuristic scan pulse on the mismatched pair
+        // Phase 1: Brief clear reveal of the mismatched pair
         setCards((prev) =>
           prev.map((c, i) =>
-            i === firstIdx || i === secondIdx ? { ...c, isMismatching: true } : c
+            i === firstIdx || i === secondIdx ? { ...c, flipPhase: 'mismatch_wait' } : c
           )
         );
 
-        // Phase 2: Flip cards inward in 3D back into the cyber card-back
+        // Phase 2: Fold front faces inward in 3D
+        scheduleTimeout(() => {
+          setCards((prev) =>
+            prev.map((c, i) =>
+              i === firstIdx || i === secondIdx ? { ...c, flipPhase: 'folding_in' } : c
+            )
+          );
+        }, 460);
+
+        // Phase 3: Swap cleanly to pastel pink card back and unfold from inward fold
         scheduleTimeout(() => {
           setCards((prev) =>
             prev.map((c, i) =>
               i === firstIdx || i === secondIdx
-                ? { ...c, isFlipped: false, isMismatching: false, isFlippingInward: true }
+                ? { ...c, isFlipped: false, flipPhase: 'unfolding_back' }
                 : c
             )
           );
-        }, 560);
+        }, 670);
 
-        // Phase 3: Finish inward 3D flip and unlock next move cleanly
+        // Phase 4: Complete animation & unlock board
         scheduleTimeout(() => {
           setCards((prev) =>
             prev.map((c, i) =>
-              i === firstIdx || i === secondIdx ? { ...c, isFlippingInward: false } : c
+              i === firstIdx || i === secondIdx ? { ...c, flipPhase: 'none' } : c
             )
           );
           flippedIndicesRef.current = [];
           setFlippedIndices([]);
           setIsResolving(false);
-        }, 1080);
+        }, 880);
       }
     }
   };
@@ -413,17 +432,22 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
     setPeekCharges((p) => p - 1);
     setIsPeeking(true);
 
-    setCards((prev) => prev.map((c) => (!c.isMatched ? { ...c, isFlipped: true } : c)));
+    setCards((prev) =>
+      prev.map((c) => (!c.isMatched ? { ...c, isFlipped: true, flipPhase: 'opening' } : c))
+    );
 
     scheduleTimeout(() => {
       setCards((prev) =>
         prev.map((c, idx) =>
           !c.isMatched && !flippedIndicesRef.current.includes(idx)
-            ? { ...c, isFlipped: false }
+            ? { ...c, isFlipped: false, flipPhase: 'unfolding_back' }
             : c
         )
       );
-      setIsPeeking(false);
+      scheduleTimeout(() => {
+        setCards((prev) => prev.map((c) => ({ ...c, flipPhase: 'none' })));
+        setIsPeeking(false);
+      }, 210);
     }, 1300);
   };
 
@@ -447,7 +471,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
       prev.map((c) => {
         if (!c.isMatched) {
           const rep = shuffledUnmatched[uIdx++];
-          return { ...rep, isFlipped: false, isMismatching: false, isFlippingInward: false };
+          return { ...rep, isFlipped: false, flipPhase: 'none' };
         }
         return c;
       })
@@ -733,6 +757,15 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
           const isFaceUp = card.isFlipped || card.isMatched;
           const isCompactGrid = difficulty.totalCards >= 36;
           const imgFailed = isImageFailed(card.imageUrl);
+          const showFrontFace = isFaceUp || card.flipPhase === 'folding_in';
+          const animClass =
+            card.flipPhase === 'opening'
+              ? 'animate-card-flip-open'
+              : card.flipPhase === 'folding_in'
+              ? 'animate-card-fold-inward'
+              : card.flipPhase === 'unfolding_back'
+              ? 'animate-card-unfold-back'
+              : '';
 
           return (
             <button
@@ -741,7 +774,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
               onClick={() => handleCardClick(index)}
               disabled={card.isMatched}
               aria-label={isFaceUp ? `${card.name}${card.isMatched ? '（已配對）' : ''}` : `未翻開卡片 ${index + 1}`}
-              className={`perspective-1000 relative aspect-square rounded-xl sm:rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500 ${
+              className={`relative aspect-square rounded-xl sm:rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500 ${
                 card.isMatched
                   ? 'opacity-85 cursor-default'
                   : isFaceUp
@@ -749,60 +782,20 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
                   : 'cursor-pointer'
               }`}
             >
-              {/* 3D Card Core (always mounted for genuine inward 3D flip without snap) */}
-              <div
-                className={`relative w-full h-full transform-style-3d ${
-                  card.isFlippingInward
-                    ? 'animate-tech-flip-inward'
-                    : `transition-transform duration-400 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                        isFaceUp ? 'rotate-y-180' : 'rotate-y-0'
-                      }`
-                }`}
-              >
-                {/* Back Face: Futuristic Pastel Cyber-Candy Card */}
+              {showFrontFace ? (
+                /* Front Face: Only mounted when card is flipped/matched/folding inward */
                 <div
-                  className={`card-face-back backface-hidden absolute inset-0 rounded-xl sm:rounded-3xl border-2 flex flex-col items-center justify-center overflow-hidden shadow-sm bg-gradient-to-br from-pink-400 via-rose-400 to-fuchsia-400 tech-card-grid ${
-                    card.isFlippingInward
-                      ? 'border-cyan-300 ring-2 ring-cyan-300/80 shadow-[0_0_18px_rgba(34,211,238,0.55)]'
-                      : 'border-pink-200/90'
-                  }`}
-                >
-                  {/* Sci-Fi HUD Corner Reticles */}
-                  <span aria-hidden="true" className="absolute top-1.5 left-1.5 w-2 h-2 border-t-2 border-l-2 border-cyan-200/80 rounded-tl-xs" />
-                  <span aria-hidden="true" className="absolute top-1.5 right-1.5 w-2 h-2 border-t-2 border-r-2 border-cyan-200/80 rounded-tr-xs" />
-                  <span aria-hidden="true" className="absolute bottom-1.5 left-1.5 w-2 h-2 border-b-2 border-l-2 border-cyan-200/80 rounded-bl-xs" />
-                  <span aria-hidden="true" className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b-2 border-r-2 border-cyan-200/80 rounded-br-xs" />
-
-                  <div
-                    className={`${
-                      isCompactGrid ? 'w-6 h-6 sm:w-8 sm:h-8 text-xs sm:text-sm' : 'w-9 h-9 sm:w-10 sm:h-10 text-base'
-                    } rounded-2xl bg-white/25 border border-cyan-100/70 flex items-center justify-center text-white shadow-inner`}
-                  >
-                    💖
-                  </div>
-                  <span
-                    className={`${
-                      isCompactGrid ? 'hidden sm:block text-[9px]' : 'text-[10px]'
-                    } text-white/95 font-mono font-black mt-1 tracking-widest`}
-                  >
-                    PAIR·CORE
-                  </span>
-                </div>
-
-                {/* Front Face: Spirit Artwork / Emoji + Sci-Fi Scan Overlay on Mismatch */}
-                <div
-                  className={`card-face-front backface-hidden absolute inset-0 rounded-xl sm:rounded-3xl border-2 flex flex-col items-center justify-center shadow-md overflow-hidden ${
+                  className={`w-full h-full rounded-xl sm:rounded-3xl border-2 flex flex-col items-center justify-center shadow-md overflow-hidden ${animClass} ${
                     card.isMatched
                       ? 'bg-rose-50/95 border-pink-400 ring-2 ring-pink-300 text-pink-700'
-                      : card.isMismatching || card.isFlippingInward
-                      ? 'bg-white border-cyan-400 ring-2 ring-cyan-300/90 text-slate-800 shadow-[0_0_18px_rgba(34,211,238,0.45)]'
+                      : card.flipPhase === 'mismatch_wait' || card.flipPhase === 'folding_in'
+                      ? 'bg-white border-rose-400 ring-2 ring-rose-300/80 text-slate-800'
                       : 'bg-white border-pink-300 text-slate-800'
                   } ${card.imageUrl ? (isCompactGrid ? 'p-1 sm:p-1.5' : 'p-1.5 sm:p-2') : ''}`}
                 >
                   {card.imageUrl && !imgFailed ? (
                     <>
                       <div className="relative w-full flex-1 min-h-0 rounded-lg sm:rounded-2xl overflow-hidden bg-pink-50 flex items-center justify-center">
-                        {/* Instant Emoji placeholder underneath so card is never blank */}
                         <span
                           aria-hidden="true"
                           className={`absolute inset-0 flex items-center justify-center ${
@@ -854,16 +847,28 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
                       )}
                     </>
                   )}
-
-                  {/* Laser Scanner Sweep during mismatch analysis before inward fold */}
-                  {card.isMismatching && (
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-x-0 top-0 h-1/2 z-30 bg-gradient-to-b from-transparent via-cyan-300/45 to-transparent animate-tech-scan"
-                    />
-                  )}
                 </div>
-              </div>
+              ) : (
+                /* Back Face: Pure Pastel Pink Card Back (zero white bleed) */
+                <div
+                  className={`w-full h-full rounded-xl sm:rounded-3xl border-2 border-pink-200 flex flex-col items-center justify-center shadow-sm bg-gradient-to-br from-pink-400 via-rose-300 to-pink-300 hover:brightness-105 transition-[filter] ${animClass}`}
+                >
+                  <div
+                    className={`${
+                      isCompactGrid ? 'w-6 h-6 sm:w-8 sm:h-8 text-xs sm:text-sm' : 'w-9 h-9 sm:w-10 sm:h-10 text-base'
+                    } rounded-2xl bg-white/30 flex items-center justify-center text-white shadow-inner`}
+                  >
+                    💖
+                  </div>
+                  <span
+                    className={`${
+                      isCompactGrid ? 'hidden sm:block text-[9px]' : 'text-[10px]'
+                    } text-white/95 font-black mt-1 tracking-widest`}
+                  >
+                    PAIR
+                  </span>
+                </div>
+              )}
 
               {floatingEmojis
                 .filter((fx) => fx.cardIndex === index)

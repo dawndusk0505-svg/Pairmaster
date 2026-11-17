@@ -9,41 +9,17 @@
 }
 
 @layer utilities {
-  .perspective-1000 {
-    perspective: 950px;
-  }
-  .transform-style-3d {
-    transform-style: preserve-3d;
-  }
-  .backface-hidden {
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-  }
-  .card-face-back {
-    transform: rotateY(0deg) translateZ(1px);
-  }
-  .card-face-front {
-    transform: rotateY(180deg) translateZ(1px);
-  }
-  .rotate-y-0 {
-    transform: rotateY(0deg);
-  }
-  .rotate-y-180 {
-    transform: rotateY(180deg);
-  }
-  .animate-tech-flip-inward {
-    animation: techFlipInward 520ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  .animate-card-flip-open {
+    animation: cardFlipOpen 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
     will-change: transform;
   }
-  .animate-tech-scan {
-    animation: techScanSweep 520ms ease-out forwards;
-    will-change: transform, opacity;
+  .animate-card-fold-inward {
+    animation: cardFoldInward 210ms cubic-bezier(0.4, 0, 0.7, 0.5) forwards;
+    will-change: transform;
   }
-  .tech-card-grid {
-    background-image:
-      linear-gradient(to right, rgba(255, 255, 255, 0.14) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.14) 1px, transparent 1px);
-    background-size: 14px 14px;
+  .animate-card-unfold-back {
+    animation: cardUnfoldBack 210ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+    will-change: transform;
   }
   .animate-float-emoji-left {
     animation: floatEmojiLeft 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
@@ -166,32 +142,30 @@
   }
 }
 
-@keyframes techFlipInward {
+@keyframes cardFlipOpen {
   0% {
-    transform: translateZ(0px) scale(1) rotateY(180deg) rotateX(0deg);
-  }
-  30% {
-    transform: translateZ(-50px) scale(0.85) rotateY(125deg) rotateX(10deg);
-  }
-  65% {
-    transform: translateZ(-36px) scale(0.89) rotateY(42deg) rotateX(6deg);
+    transform: perspective(850px) scale(0.92) rotateY(-88deg);
   }
   100% {
-    transform: translateZ(0px) scale(1) rotateY(0deg) rotateX(0deg);
+    transform: perspective(850px) scale(1) rotateY(0deg);
   }
 }
 
-@keyframes techScanSweep {
+@keyframes cardFoldInward {
   0% {
-    opacity: 0;
-    transform: translateY(-100%);
-  }
-  30% {
-    opacity: 0.9;
+    transform: perspective(850px) translateZ(0px) scale(1) rotateY(0deg);
   }
   100% {
-    opacity: 0;
-    transform: translateY(140%);
+    transform: perspective(850px) translateZ(-32px) scale(0.86) rotateY(88deg);
+  }
+}
+
+@keyframes cardUnfoldBack {
+  0% {
+    transform: perspective(850px) translateZ(-32px) scale(0.86) rotateY(-88deg);
+  }
+  100% {
+    transform: perspective(850px) translateZ(0px) scale(1) rotateY(0deg);
   }
 }
 

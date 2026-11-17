@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Volume2, VolumeX, Sparkles, QrCode, Trophy, LogIn, LogOut, ShieldCheck } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 import { useFirebase } from '../contexts/FirebaseContext';
+import { CANDY_SPIRIT_ITEMS } from '../data/matchThemes';
 
 export type ActiveTab = 'flip' | 'link' | 'chemistry' | 'swipe' | 'fortune';
 
@@ -27,6 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     isVerifiedGoogleUser,
     isAdmin,
     isSuperAdmin,
+    gameDisplayName,
     pendingNoticeRequests,
     user,
     authReady,
@@ -34,6 +36,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     signInWithGoogle,
     signOutUser,
   } = useFirebase();
+
+  const matchedSpirit = CANDY_SPIRIT_ITEMS.find((s) => s.name === gameDisplayName);
 
   useEffect(() => {
     return soundFx.subscribe(setIsMuted);
@@ -178,20 +182,27 @@ export const Navbar: React.FC<NavbarProps> = ({
           {authReady && (
             isVerifiedGoogleUser && user ? (
               <div className="flex items-center gap-1 bg-pink-50/90 border border-pink-200 rounded-xl pl-1.5 pr-1 py-1">
-                {user.photoURL ? (
+                {matchedSpirit?.imageUrl ? (
+                  <img
+                    src={matchedSpirit.imageUrl}
+                    alt={gameDisplayName}
+                    referrerPolicy="no-referrer"
+                    className="w-5 h-5 rounded-lg object-cover border border-pink-200"
+                  />
+                ) : user.photoURL ? (
                   <img
                     src={user.photoURL}
-                    alt={user.displayName || '玩家'}
+                    alt={gameDisplayName}
                     referrerPolicy="no-referrer"
                     className="w-5 h-5 rounded-lg object-cover border border-pink-200"
                   />
                 ) : (
                   <span className="w-5 h-5 rounded-lg bg-pink-200 text-pink-700 text-[10px] font-black flex items-center justify-center">
-                    {(user.displayName || '玩')[0]}
+                    {(gameDisplayName || '玩')[0]}
                   </span>
                 )}
-                <span className="hidden sm:inline text-[11px] font-bold text-slate-700 max-w-[72px] truncate">
-                  {user.displayName || '已登入'}
+                <span className="hidden sm:inline text-[11px] font-bold text-slate-700 max-w-[84px] truncate">
+                  {gameDisplayName}
                 </span>
                 <button
                   type="button"
