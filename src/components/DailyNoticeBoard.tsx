@@ -196,11 +196,11 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
               </span>
               <div>
                 <span className="text-rose-600 font-black">
-                  🎂 每日免費生日祝福欄 × 💌 浪漫表白置頂板
+                  🎂 每日限定生日祝福欄 × 💌 浪漫表白置頂板
                 </span>
                 <span className="mx-1.5 text-slate-300">·</span>
                 <span>
-                  今日（{todayHkDate}）名額尚餘免費預約，字數不限！想同壽星慶祝或向心儀對象表白？即時揀日子投稿！
+                  今日（{todayHkDate}）置頂席位現正開放預約，字數不限！想同壽星慶祝或向心儀對象表白？即時揀日子投稿！
                 </span>
               </div>
             </div>
@@ -217,7 +217,7 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                     className="px-3 py-1.5 text-xs font-black text-white bg-gradient-to-r from-amber-400 to-rose-500 hover:from-amber-500 hover:to-rose-600 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
                   >
                     <Cake className="w-3.5 h-3.5" />
-                    <span>免費預約生日欄</span>
+                    <span>預約生日祝福欄</span>
                   </button>
                   <button
                     type="button"
@@ -361,9 +361,6 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                               <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-800 bg-amber-200/80 border border-amber-300 px-2 py-0.5 rounded-md">
                                 <Crown className="w-3 h-3 text-amber-600" />
                                 <span>今日主角登場</span>
-                              </span>
-                              <span className="text-[10px] font-bold text-rose-500">
-                                每日免費 1 位
                               </span>
                             </div>
                             <h3 className="text-base font-black text-slate-900 mt-0.5">

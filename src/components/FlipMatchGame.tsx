@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { RotateCcw, Eye, Zap, Shuffle, Trophy, Clock, Flame, Palette, Cloud, Volume2, VolumeX } from 'lucide-react';
+import { RotateCcw, Zap, Shuffle, Trophy, Clock, Flame, Palette, Cloud, Volume2, VolumeX } from 'lucide-react';
 import { MATCH_THEMES, DIFFICULTY_PRESETS, DifficultyConfig, MatchTheme } from '../data/matchThemes';
 import { CustomThemeModal } from './CustomThemeModal';
 import { soundFx } from '../utils/audio';
@@ -59,12 +59,10 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
   const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [isGameActive, setIsGameActive] = useState(false);
   const [isVictory, setIsVictory] = useState(false);
-  const [isPeeking, setIsPeeking] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [freezeSeconds, setFreezeSeconds] = useState(0);
 
   // Power-up charges
-  const [peekCharges, setPeekCharges] = useState(1);
   const [freezeCharges, setFreezeCharges] = useState(1);
   const [shuffleCharges, setShuffleCharges] = useState(1);
 
@@ -175,10 +173,8 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
     setIsNewRecord(false);
     setSyncStatus(null);
     setFloatingEmojis([]);
-    setIsPeeking(false);
     setIsResolving(false);
     setFreezeSeconds(0);
-    setPeekCharges(1);
     setFreezeCharges(1);
     setShuffleCharges(1);
   }, [difficulty, selectedTheme, clearAllTimeouts]);
@@ -285,7 +281,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
   );
 
   const handleCardClick = (index: number) => {
-    if (isPeeking || isResolving || isVictory) return;
+    if (isResolving || isVictory) return;
     const clickedCard = cards[index];
     if (!clickedCard || clickedCard.isMatched || clickedCard.isFlipped) return;
     if (flippedIndicesRef.current.length >= 2) return;
@@ -424,31 +420,6 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
         }, 880);
       }
     }
-  };
-
-  const handlePeekPowerUp = () => {
-    if (peekCharges <= 0 || isPeeking || isResolving || isVictory) return;
-    soundFx.playPowerUp();
-    setPeekCharges((p) => p - 1);
-    setIsPeeking(true);
-
-    setCards((prev) =>
-      prev.map((c) => (!c.isMatched ? { ...c, isFlipped: true, flipPhase: 'opening' } : c))
-    );
-
-    scheduleTimeout(() => {
-      setCards((prev) =>
-        prev.map((c, idx) =>
-          !c.isMatched && !flippedIndicesRef.current.includes(idx)
-            ? { ...c, isFlipped: false, flipPhase: 'unfolding_back' }
-            : c
-        )
-      );
-      scheduleTimeout(() => {
-        setCards((prev) => prev.map((c) => ({ ...c, flipPhase: 'none' })));
-        setIsPeeking(false);
-      }, 210);
-    }, 1300);
   };
 
   const handleFreezePowerUp = () => {
@@ -659,21 +630,6 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-pink-500 font-bold hidden sm:inline">🌸 萌趣錦囊：</span>
-            <button
-              type="button"
-              onClick={handlePeekPowerUp}
-              disabled={peekCharges <= 0 || isPeeking || isResolving || isVictory}
-              title="透視卡片 (1.3秒)"
-              className={`px-3 py-1.5 text-xs rounded-xl border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                peekCharges > 0 && !isPeeking && !isResolving
-                  ? 'bg-pink-50 border-pink-200 text-pink-700 hover:bg-pink-100 shadow-xs'
-                  : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-              }`}
-            >
-              <Eye className="w-3.5 h-3.5 text-pink-500" />
-              <span>靈視一瞥 ({peekCharges})</span>
-            </button>
-
             <button
               type="button"
               onClick={handleFreezePowerUp}

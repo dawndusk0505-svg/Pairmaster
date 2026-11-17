@@ -141,7 +141,7 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
         setNeedGoogleSignIn(true);
         setFeedback({
           type: 'err',
-          text: '請先按下方「Google 登入」驗證身份，即可立即送出免費預約申請！',
+          text: '請先按下方「Google 登入」驗證身份，即可立即送出預約申請！',
         });
         return;
       }
@@ -178,7 +178,7 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
               <Sparkles className="w-5 h-5" />
             </span>
             <div>
-              <h2 className="text-lg font-black text-slate-900">免費預約置頂生日欄／表白板</h2>
+              <h2 className="text-lg font-black text-slate-900">預約置頂生日欄／表白板</h2>
               <p className="text-xs font-bold text-pink-600">
                 揀選日子・即時查名額・字數不限・版主確認即登全服置頂
               </p>
@@ -246,7 +246,7 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
                 <span>想邊一日登出？（香港日期）</span>
               </label>
               <span className="text-[11px] font-bold text-slate-500">
-                每日免費各 1 個名額 · 先到先得
+                每日各精選 1 則 · 先到先得
               </span>
             </div>
 
@@ -324,7 +324,7 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
                       }已有預約／正在展示 (1/1 已滿額)`
                     : `${targetDate} ${
                         noticeType === 'birthday' ? '生日欄' : '表白欄'
-                      }尚餘 1 個免費名額 (0/1 空缺中)`}
+                      }尚餘預約席位 (0/1 空缺中)`}
                 </span>
               </span>
               <span
@@ -514,7 +514,7 @@ export const NoticeSubmissionModal: React.FC<NoticeSubmissionModalProps> = ({
                   ? '傳送給版主中...'
                   : isSlotTaken
                   ? `送出候補申請（${targetDate}）`
-                  : `免費送出預約申請（${targetDate}）`}
+                  : `送出預約申請（${targetDate}）`}
               </span>
             </button>
           </form>

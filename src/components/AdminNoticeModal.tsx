@@ -834,7 +834,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                   <Inbox className="w-8 h-8 text-pink-300 mx-auto" />
                   <p className="text-sm font-black text-slate-700">暫時未有新的玩家預約申請</p>
                   <p className="text-xs text-slate-500 font-medium">
-                    當有人喺首頁點擊「免費預約生日欄／投稿表白」填寫後，系統會第一時間通知你並按投稿先後排序。
+                    當有人喺首頁點擊「預約生日祝福欄／投稿表白」填寫後，系統會第一時間通知你並按投稿先後排序。
                   </p>
                 </div>
               ) : (
@@ -1047,7 +1047,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                   <div>
                     <p className="font-black text-slate-800">
                       {activeTab === 'birthday'
-                        ? '🎂 生日祝福欄（每日免費 1 位）'
+                        ? '🎂 生日祝福欄（每日精選 1 則）'
                         : '💌 表白告示板（每日限定 1 則）'}
                     </p>
                     <p className="text-[11px] font-bold text-slate-500 mt-0.5">
