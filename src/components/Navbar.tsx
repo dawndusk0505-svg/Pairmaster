@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Sparkles, QrCode, Trophy, LogIn, LogOut, ShieldCheck } from 'lucide-react';
+import { Volume2, VolumeX, Sparkles, QrCode, Trophy, LogIn, LogOut, ShieldCheck, Users } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { CANDY_SPIRIT_ITEMS } from '../data/matchThemes';
@@ -13,6 +13,7 @@ interface NavbarProps {
   onOpenShare?: () => void;
   onOpenLeaderboard?: () => void;
   onOpenAdmin?: () => void;
+  onOpenVisitors?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -22,6 +23,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenShare,
   onOpenLeaderboard,
   onOpenAdmin,
+  onOpenVisitors,
 }) => {
   const [isMuted, setIsMuted] = useState(soundFx.getIsMuted());
   const {
@@ -30,6 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     isSuperAdmin,
     gameDisplayName,
     pendingNoticeRequests,
+    visitors,
     user,
     authReady,
     isAuthBusy,
@@ -110,7 +113,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 soundFx.playClick();
                 onOpenAdmin();
               }}
-              title="管理員每日告示設定"
+              title="管理員控制中心"
               aria-label="管理員設定"
               className="relative p-1.5 sm:px-2.5 sm:py-1.5 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-black"
             >
@@ -121,6 +124,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {pendingCount}
                 </span>
               )}
+            </button>
+          )}
+          {isSuperAdmin && onOpenVisitors && (
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                onOpenVisitors();
+              }}
+              title="查看訪客統計（同裝置只計一人）"
+              aria-label="訪客統計"
+              className="p-1.5 sm:px-2.5 sm:py-1.5 text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-black"
+            >
+              <Users className="w-4 h-4 text-sky-600" />
+              <span className="hidden sm:inline">訪客</span>
+              <span className="px-1 py-0.5 text-[10px] leading-none font-black bg-sky-600 text-white rounded-md tabular-nums">
+                {visitors.length}
+              </span>
             </button>
           )}
           {onOpenLeaderboard && (

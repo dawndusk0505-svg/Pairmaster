@@ -37,12 +37,13 @@ import {
 import { soundFx } from '../utils/audio';
 import { compressNoticePhoto } from '../utils/imageCompress';
 
+export type AdminTab = 'requests' | 'scheduled' | 'birthday' | 'confession' | 'names' | 'visitors' | 'admins';
+
 interface AdminNoticeModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: AdminTab;
 }
-
-type AdminTab = 'requests' | 'scheduled' | 'birthday' | 'confession' | 'names' | 'visitors' | 'admins';
 
 function formatCountdown(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -67,7 +68,7 @@ function formatExactHkTime(ms: number): string {
   }).format(new Date(ms));
 }
 
-export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onClose }) => {
+export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onClose, initialTab }) => {
   const {
     user,
     isAdmin,
@@ -93,6 +94,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
     adminDeleteLeaderboardEntry,
     currentDeviceId,
     visitors,
+    visitorsError,
     anonAuthDisabled,
     adminRenameVisitor,
     adminDeleteVisitor,
@@ -128,13 +130,23 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
   const [newAdminNote, setNewAdminNote] = useState('');
   const [copiedSelfUid, setCopiedSelfUid] = useState(false);
 
-  // Auto-switch to 'requests' tab when modal opens and there are pending submissions
+  // Open requested tab (e.g. 'visitors') or auto-switch to 'requests' when pending items exist
   useEffect(() => {
     if (!isOpen || !isAdmin) return;
+    if (initialTab) {
+      if ((initialTab === 'visitors' || initialTab === 'requests' || initialTab === 'scheduled' || initialTab === 'admins') && !isSuperAdmin) {
+        setActiveTab('birthday');
+      } else {
+        setActiveTab(initialTab);
+      }
+      return;
+    }
     if (isSuperAdmin && pendingNoticeRequests.length > 0) {
       setActiveTab('requests');
+    } else {
+      setActiveTab('birthday');
     }
-  }, [isOpen, isAdmin, isSuperAdmin]); // intentional: only on open
+  }, [isOpen, isAdmin, isSuperAdmin, initialTab]); // intentional: only on open/tab target change
 
   useEffect(() => {
     if (!isOpen || !isAdmin) return;
@@ -529,7 +541,7 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
               <ShieldCheck className="w-5 h-5" />
             </span>
             <div>
-              <h2 className="text-lg font-black text-slate-900">管理員告示審核與排期中心</h2>
+              <h2 className="text-lg font-black text-slate-900">管理員控制中心（告示 · 名稱 · 訪客）</h2>
               <p className="text-xs font-bold text-pink-600">
                 只有管理員可見 · 今日香港日期 {todayHkDate}
               </p>
@@ -1482,6 +1494,13 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                   </span>
                 </div>
               </div>
+
+              {visitorsError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-[11px] font-bold text-rose-700 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <span>{visitorsError}</span>
+                </div>
+              )}
 
               {anonAuthDisabled && (
                 <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-800 flex items-start gap-2">

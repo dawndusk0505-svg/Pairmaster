@@ -386,6 +386,7 @@ interface FirebaseContextValue {
   cancelScheduledNotice: (type: 'birthday' | 'confession', targetDate: string) => Promise<void>;
   currentDeviceId: string;
   visitors: VisitorRecord[];
+  visitorsError: string | null;
   adminRenameVisitor: (deviceId: string, newName: string) => Promise<void>;
   adminDeleteVisitor: (deviceId: string) => Promise<void>;
 }
@@ -471,6 +472,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [pendingNoticeRequests, setPendingNoticeRequests] = useState<NoticeRequestRecord[]>([]);
   const [scheduledNotices, setScheduledNotices] = useState<ScheduledNoticeRecord[]>([]);
   const [visitors, setVisitors] = useState<VisitorRecord[]>([]);
+  const [visitorsError, setVisitorsError] = useState<string | null>(null);
   const [todayHkDate, setTodayHkDate] = useState<string>(() => getHongKongDateString());
 
   const currentDeviceIdRef = useRef<string>(getOrCreateDeviceId());
@@ -991,6 +993,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setPendingNoticeRequests([]);
       setScheduledNotices([]);
       setVisitors([]);
+      setVisitorsError(null);
       return;
     }
     if (!isSuperAdminEmail(user.email)) {
@@ -998,6 +1001,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setPendingNoticeRequests([]);
       setScheduledNotices([]);
       setVisitors([]);
+      setVisitorsError(null);
       return;
     }
 
@@ -1109,9 +1113,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         });
         list.sort((a, b) => b.lastSeenAtMs - a.lastSeenAtMs);
         setVisitors(list);
+        setVisitorsError(null);
       },
-      () => {
+      (err) => {
         setVisitors([]);
+        const msg = err instanceof Error ? err.message : String(err);
+        setVisitorsError(`暫時未能讀取雲端訪客統計：${msg}`);
       }
     );
 
@@ -2279,6 +2286,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         cancelScheduledNotice,
         currentDeviceId: currentDeviceIdRef.current,
         visitors,
+        visitorsError,
         adminRenameVisitor,
         adminDeleteVisitor,
       }}

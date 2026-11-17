@@ -12,12 +12,14 @@ import {
   ZoomIn,
   X,
   Music,
+  Users,
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { soundFx } from '../utils/audio';
 
 interface DailyNoticeBoardProps {
   onOpenAdmin?: () => void;
+  onOpenVisitors?: () => void;
   onOpenSubmit?: (defaultType?: 'birthday' | 'confession') => void;
 }
 
@@ -35,6 +37,7 @@ const FAIRY_BULBS = [
 
 export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
   onOpenAdmin,
+  onOpenVisitors,
   onOpenSubmit,
 }) => {
   const {
@@ -44,6 +47,7 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
     isAdmin,
     isSuperAdmin,
     pendingNoticeRequests,
+    visitors,
   } = useFirebase();
 
   const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; caption: string } | null>(null);
@@ -242,6 +246,20 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                   <span>管理員設定</span>
                 </button>
               )}
+
+              {isSuperAdmin && onOpenVisitors && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    onOpenVisitors();
+                  }}
+                  className="px-3 py-1.5 text-xs font-black text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all"
+                >
+                  <Users className="w-3.5 h-3.5 text-sky-600" />
+                  <span>訪客統計 ({visitors.length})</span>
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -288,6 +306,20 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                   >
                     <Settings className="w-3 h-3" />
                     <span>管理員編輯{pendingCount > 0 ? ` (${pendingCount})` : ''}</span>
+                  </button>
+                )}
+
+                {isSuperAdmin && onOpenVisitors && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      onOpenVisitors();
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-black text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-300 rounded-xl flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                  >
+                    <Users className="w-3 h-3 text-sky-600" />
+                    <span>訪客統計 ({visitors.length})</span>
                   </button>
                 )}
               </div>
