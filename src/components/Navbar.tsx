@@ -72,7 +72,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-2xl bg-gradient-to-tr from-pink-400 to-rose-400 flex items-center justify-center text-white text-sm sm:text-base shadow-sm group-hover:scale-105 transition-transform">
             💖
           </span>
-          <span className="tracking-wide">PairMaster · 奇蹟配對</span>
+          <span className="tracking-wide sm:hidden">PairMaster</span>
+          <span className="tracking-wide hidden sm:inline">PairMaster · 奇蹟配對</span>
         </a>
 
         {/* Zone 2: Nav links */}
@@ -251,6 +252,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="px-2.5 py-1.5 text-xs font-bold text-pink-700 bg-pink-50 hover:bg-pink-100 border border-pink-200 rounded-xl transition-all flex items-center gap-1 cursor-pointer disabled:opacity-60 whitespace-nowrap"
               >
                 <LogIn className="w-3.5 h-3.5 text-pink-500" />
+                <span className="sm:hidden">登入</span>
                 <span className="hidden sm:inline">雲端登入</span>
               </button>
             )
