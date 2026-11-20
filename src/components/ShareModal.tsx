@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { X, Copy, Check, QrCode, Smartphone, ExternalLink, Link2, Megaphone } from 'lucide-react';
+import { X, Copy, Check, QrCode, Smartphone, ExternalLink, Link2, Megaphone, ShieldCheck } from 'lucide-react';
 import { soundFx } from '../utils/audio';
+import { useFirebase } from '../contexts/FirebaseContext';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -10,10 +11,17 @@ interface ShareModalProps {
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, appUrl }) => {
+  const { isAdmin } = useFirebase();
   const [activeTab, setActiveTab] = useState<'url' | 'promo'>('url');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const activeUrl = typeof window !== 'undefined' ? window.location.href : appUrl;
+
+  useEffect(() => {
+    if (!isAdmin && activeTab === 'promo') {
+      setActiveTab('url');
+    }
+  }, [isAdmin, activeTab]);
 
   useEffect(() => {
     if (isOpen && activeUrl) {
@@ -75,6 +83,8 @@ ${activeUrl}
 想幫朋友預約專屬生日置頂／投稿今日表白，歡迎 DM 我排期呀！💌
 即點即玩 👉 ${activeUrl}`;
 
+  const effectiveTab = isAdmin ? activeTab : 'url';
+
   return (
     <div className="fixed inset-0 z-50 bg-pink-950/40 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-white border-2 border-pink-300 rounded-3xl p-5 sm:p-7 max-w-lg w-full shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
@@ -82,12 +92,14 @@ ${activeUrl}
         <div className="flex items-center justify-between border-b border-pink-100 pb-3 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-pink-100 border border-pink-200 flex items-center justify-center text-pink-600 shadow-xs">
-              {activeTab === 'url' ? <QrCode className="w-4 h-4" /> : <Megaphone className="w-4 h-4" />}
+              {effectiveTab === 'url' ? <QrCode className="w-4 h-4" /> : <Megaphone className="w-4 h-4" />}
             </div>
             <div>
-              <h3 className="text-base font-black text-slate-900">分享與社群宣傳包 🌸</h3>
+              <h3 className="text-base font-black text-slate-900">
+                {isAdmin ? '分享與社群宣傳包 🌸' : '分享專屬網址與 QR 🌸'}
+              </h3>
               <span className="text-xs text-pink-500 font-mono font-bold">
-                SHARE, QR & SOCIAL PROMO
+                {isAdmin ? 'SHARE, QR & SOCIAL PROMO' : 'SHARE & QR CODE'}
               </span>
             </div>
           </div>
@@ -105,44 +117,46 @@ ${activeUrl}
           </button>
         </div>
 
-        {/* Mode Switcher Tabs */}
-        <div className="grid grid-cols-2 gap-1.5 p-1 bg-pink-100/70 rounded-2xl border border-pink-200 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              soundFx.playClick();
-              setActiveTab('url');
-            }}
-            className={`py-2 px-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'url'
-                ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
-                : 'text-slate-600 hover:text-pink-600'
-            }`}
-          >
-            <QrCode className="w-3.5 h-3.5" />
-            <span>專屬網址與 QR</span>
-          </button>
+        {/* Mode Switcher Tabs (Promo Copy strictly visible to Admins only) */}
+        {isAdmin && (
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-pink-100/70 rounded-2xl border border-pink-200 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                setActiveTab('url');
+              }}
+              className={`py-2 px-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                effectiveTab === 'url'
+                  ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-pink-600'
+              }`}
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>專屬網址與 QR</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              soundFx.playClick();
-              setActiveTab('promo');
-            }}
-            className={`py-2 px-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'promo'
-                ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
-                : 'text-slate-600 hover:text-pink-600'
-            }`}
-          >
-            <Megaphone className="w-3.5 h-3.5" />
-            <span>FB/IG/Threads 文案</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                setActiveTab('promo');
+              }}
+              className={`py-2 px-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                effectiveTab === 'promo'
+                  ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-pink-600'
+              }`}
+            >
+              <Megaphone className="w-3.5 h-3.5" />
+              <span>FB/IG/Threads 文案</span>
+            </button>
+          </div>
+        )}
 
         {/* Tab Body */}
         <div className="flex-1 overflow-y-auto space-y-4 pr-0.5">
-          {activeTab === 'url' ? (
+          {effectiveTab === 'url' ? (
             <>
               {/* Option 1: Instant QR Code Scan */}
               <div className="bg-pink-50/70 border border-pink-200 rounded-3xl p-4 flex flex-col sm:flex-row items-center gap-5">
@@ -198,7 +212,7 @@ ${activeUrl}
                 </div>
 
                 <p className="text-xs text-slate-600 leading-relaxed font-bold">
-                  你可以免費將上面呢串網址縮成好似{' '}
+                  你可以將上面呢串網址縮成好似{' '}
                   <span className="text-pink-600 font-mono">tinyurl.com/pair-Fish</span> 咁簡單嘅網址：
                 </p>
 
@@ -243,6 +257,11 @@ ${activeUrl}
             </>
           ) : (
             <div className="space-y-4">
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-black text-amber-800">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>管理員專用宣傳文案（一般玩家及訪客唔會見到此分頁）</span>
+              </div>
+
               {/* Threads / IG Story Copy */}
               <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3.5 space-y-2">
                 <div className="flex items-center justify-between gap-2">
