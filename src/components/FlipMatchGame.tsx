@@ -1083,7 +1083,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
                 🍬 糖果萌星全圖鑑（{activeTheme.items.length} 款精靈與用具）
               </span>
               <span className="text-xs text-slate-500 font-bold">
-                25 位零撞樣精靈 × 11 款精靈用具與水果化身
+                25 位精靈 × 11 款精靈用具與水果化身
               </span>
             </div>
           </div>

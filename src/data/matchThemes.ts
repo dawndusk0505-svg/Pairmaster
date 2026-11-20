@@ -100,7 +100,7 @@ export const MATCH_THEMES: MatchTheme[] = [
     id: 'candy-spirits',
     name: '糖果萌星',
     enName: 'Candy Match Spirits',
-    description: '25 位零撞樣糖果精靈 × 11 款精靈用具與水果化身',
+    description: '25 位精靈 × 11 款精靈用具與水果化身',
     icon: '🍬',
     items: CANDY_SPIRIT_ITEMS,
   },
