@@ -10,12 +10,33 @@ interface ShareModalProps {
   appUrl: string;
 }
 
+const CUSTOM_SHARE_URL_KEY = 'pairmaster_custom_share_url_v1';
+
+function getCleanCurrentUrl(fallbackUrl: string): string {
+  if (typeof window === 'undefined') return fallbackUrl;
+  const { origin, pathname } = window.location;
+  const cleanPath = pathname && pathname !== '/' ? pathname.replace(/\/+$/, '') : '';
+  return `${origin}${cleanPath}`;
+}
+
 export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, appUrl }) => {
   const { isAdmin } = useFirebase();
   const [activeTab, setActiveTab] = useState<'url' | 'promo'>('url');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
-  const activeUrl = typeof window !== 'undefined' ? window.location.href : appUrl;
+  const [customShortUrl, setCustomShortUrl] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      return localStorage.getItem(CUSTOM_SHARE_URL_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [shortUrlDraft, setShortUrlDraft] = useState<string>(customShortUrl);
+  const [shortUrlSavedToast, setShortUrlSavedToast] = useState(false);
+
+  const cleanCurrentUrl = getCleanCurrentUrl(appUrl);
+  const activeUrl = customShortUrl.trim() || cleanCurrentUrl;
 
   useEffect(() => {
     if (!isAdmin && activeTab === 'promo') {
@@ -51,40 +72,83 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, appUrl 
     }
   };
 
-  const threadsShortCopy = `整咗個超粉嫩療癒嘅王國樂園 🌸【PairMaster · 奇蹟配對王國】
-一個網頁免下載玩齊 7 大消消樂＆競技遊戲 ＋ 36 款糖果精靈星幣圖鑑牆 🫧🧁🏰⚔️
-還有 MBTI × 星座契合度合盤、心動滑卡破冰＆每日幸運籤卡！💘
+  const handleSaveCustomShortUrl = (e: React.FormEvent) => {
+    e.preventDefault();
+    soundFx.playClick();
+    const trimmed = shortUrlDraft.trim();
+    if (trimmed && !/^https?:\/\//i.test(trimmed)) {
+      return;
+    }
+    setCustomShortUrl(trimmed);
+    try {
+      if (trimmed) {
+        localStorage.setItem(CUSTOM_SHARE_URL_KEY, trimmed);
+      } else {
+        localStorage.removeItem(CUSTOM_SHARE_URL_KEY);
+      }
+    } catch {
+      // ignore
+    }
+    setShortUrlSavedToast(true);
+    setTimeout(() => setShortUrlSavedToast(false), 2000);
+  };
 
-✨ 重點彩蛋功能（每日置頂限定精選）：
-🎂【置頂生日祝福欄】七彩閃燈主角框，為今日壽星送上全服專屬祝福！
-💌【每日限定表白告示板】幫你將心意置頂畀對方睇（可以匿名「唔知邊個(unknown)」㗎🤫）
+  const handleResetShortUrl = () => {
+    soundFx.playClick();
+    setShortUrlDraft('');
+    setCustomShortUrl('');
+    try {
+      localStorage.removeItem(CUSTOM_SHARE_URL_KEY);
+    } catch {
+      // ignore
+    }
+  };
 
-即點即玩（免下載）👇
+  const isLongCloudRunUrl = cleanCurrentUrl.includes('.run.app') && !customShortUrl.trim();
+
+  const threadsShortCopy = `整咗個超粉嫩療癒嘅免費網頁遊戲王國 🌸【PairMaster · 奇蹟配對王國】
+免下載即點即玩！一個網頁玩齊 7 款配對街機遊戲 ＋ 36 張糖果精靈＆魔法用具閃卡圖鑑牆 🃏🔗🫧🪄🧁🏰⚔️
+
+✨ 系統仲有 3 大互動工具 ＆ 跨裝置雲端榜：
+💞 MBTI × 星座契合度合盤（可儲存自己檔案幫朋友測＋下載官方合盤圖卡！）
+💘 心動滑卡破冰（真實左右滑動＋保留好友聊天室紀錄）
+☀️ 每日開運幸運籤卡盲盒 ＋ 專屬精靈頭像＆7大遊戲雲端排行榜
+
+🎁 每日全服置頂特別企劃（每日各精選 1 則 · 午夜自動撤下）：
+🎂【置頂生日祝福欄】七彩閃燈主角框 ＋ 主角寫真放大 ＋ 全服送祝福＆即播《Happy Birthday》生日歌！
+💌【每日表白告示板】可匿名「唔知邊個(unknown)」＋ 附帶紀念相片，幫你全服置頂傳情 🤫
+
+立即開玩（手機可加到主畫面變 App）👇
 ${activeUrl}
 #PairMaster #奇蹟配對王國 #MBTI配對 #星座合盤 #生日祝福 #表白告示板 #香港小遊戲`;
 
   const fbIgFullCopy = `🌸 歡迎嚟到【PairMaster · 奇蹟配對王國】💖
-一個網頁免費免下載玩齊 7 大王國遊戲 ＋ 儲星幣抽 36 款專屬精靈＆用具圖鑑 ＋ 4 大心靈占卜模式：
+一個網頁免費免下載（仲支援手機「加到主畫面」變獨立 App 📱）玩齊「糖果遊戲廳 × 星幣圖鑑牆 × 心靈配對工具 × 每日置頂告示板」：
 
-🎮 七大王國遊樂場：
-🃏 翻牌記憶大戰 ＆ 🔗 糖果連連看（含每日同盤挑戰榜！）
-🫧 合成大精靈（物理掉落衝 SSR 星願蠑螈）
-🪄 命定 CP 疊疊消（精靈 × 專屬魔法用具／水果配對）
-🧁 甜品輸送帶（45 秒極速出餐 · 5 連擊 FEVER ×3！）
-🏰 百層爬塔大冒險（三選一祝福・迷霧與 Boss 層）
-⚔️ 同盤好友 PK 賽（複製戰書連結同朋友搶分！）
-🏆 儲「王國星幣」仲可以喺【精靈圖鑑牆】盲盒抽卡集齊 36 款精美閃卡！
+🎮 七大王國街機遊戲（每局賺取「王國星幣」＋ 支援雲端排行榜＆防偷看暫停）：
+🃏 翻牌記憶大戰：25 位精靈 × 11 款精靈用具與水果化身（支援每日同盤挑戰、冰凍／透視道具、自訂相片主題！）
+🔗 糖果連連看：兩轉彎極速連線（輕鬆 6×4 / 標準 8×6 / 大師 10×6 全盤挑戰）
+🫧 合成大精靈：物理掉落進化罐，兩隻撞埋進化衝 SSR 星願蠑螈！
+🪄 命定 CP 疊疊消：層疊壓牌配對精靈與專屬用具（甜蜜 6 組 / 熱戀 9 組 / 全王國 11 組）
+🧁 甜品輸送帶：45 秒極速出餐，湊滿 5 連擊啟動 🔥 FEVER ×3 狂飆！
+🏰 百層爬塔大冒險：迷霧層、CP 層、Boss 洗牌層 ＋ 過關任選王國祝福！
+⚔️ 同盤好友 PK 賽：同種子 60 秒限時對戰，複製戰書連結約閨蜜／情侶同場搶分！
 
-🧭 心靈契合＆互動工具：
-💞 MBTI × 星座契合度測算 ｜ 💘 心動滑卡破冰 ｜ ☀️ 每日幸運色彩美食籤卡
+✨ 星幣精靈閃卡圖鑑牆（36 閃卡 ＋ 11 組 CP 雙星徽章）：
+🏆 儲「王國星幣」即可 60 星幣扭蛋盲盒抽卡／80 星幣指定解鎖心儀精靈，仲可以喺個人檔案換成專屬遊戲頭像！
 
-🎁 每日全服置頂特別企劃（每日各精選 1 則 · 過午夜 12 點自動撤下）：
+🧭 3 大心靈契合 ＆ 互動工具：
+💞 MBTI × 星座契合度測算：可儲存個人檔案方便幫朋友測，一鍵下載精美「官方合盤報告 PNG 圖卡」分享！
+💘 心動滑卡破冰：真實左右滑卡配對 ＋ 保留多輪好友聊天紀錄
+☀️ 每日幸運籤卡：每日開運顏色、幸運美食與精靈能量盲盒
+
+🎁 每日全服置頂特別企劃（每日限定各 1 則 · 過午夜 12 點自動撤下）：
 ━━━━━━━━━━━━
-🎂【生日祝福欄示範】（七彩閃燈框主角光環 · 全服專屬置頂祝福！）
-👑 祝「Fish」生日快樂！｜來自：糖果好友團
-💬「祝今日全場主角 Fish 生日快樂！願你日日甜美開心，場場破紀錄！🎈💖」
+🎂【生日祝福欄示範】（七彩閃燈主角框 · 附主角寫真放大 ＋ 全服送祝福計數 ＋ 生日快樂歌！）
+👑 祝「小櫻」生日快樂！｜來自：糖果好友團
+💬「祝今日全場主角生日快樂！願你日日甜美開心，場場破紀錄！🎈💖」
 ━━━━━━━━━━━━
-💌【表白告示板示範】（每日限定 1 則 · 可實名或匿名）
+💌【表白告示板示範】（每日限定 1 則 · 可實名或匿名 ＋ 附紀念相片放大 ＋ 全服應援！）
 💕 致：成日同我一齊玩配對嘅你｜告白人：唔知邊個(unknown)
 💬「其實每次同你測 MBTI 同星座合盤我都偷偷 cap 低咗圖，好鍾意同你一齊玩嘅感覺 💕🌹」
 ━━━━━━━━━━━━
@@ -190,12 +254,30 @@ ${activeUrl}
                   <p className="text-xs text-slate-600 leading-relaxed font-bold">
                     朋友唔需要手動輸入長網址，只要開啟手機相機掃描 QR Code，就可以即時進入遊戲！
                   </p>
+                  {customShortUrl.trim() && (
+                    <span className="inline-block px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-700 text-[10px] font-black">
+                      ✅ 已自動套用你設定嘅短網址
+                    </span>
+                  )}
                 </div>
               </div>
 
               {/* Current URL Copy */}
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-600 font-bold">目前專屬網址：</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs text-slate-600 font-bold">
+                    {customShortUrl.trim() ? '目前套用嘅短網址：' : '目前網站預設網址：'}
+                  </label>
+                  {customShortUrl.trim() && (
+                    <button
+                      type="button"
+                      onClick={handleResetShortUrl}
+                      className="text-[11px] font-black text-rose-500 hover:underline cursor-pointer"
+                    >
+                      還原預設網址
+                    </button>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
@@ -216,18 +298,40 @@ ${activeUrl}
                     <span>{copiedKey === 'url' ? '已複製' : '複製網址'}</span>
                   </button>
                 </div>
+                {isLongCloudRunUrl && (
+                  <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                    💡 預設網址之所以比較長，係因為系統目前偵測到平台自動分配嘅雲端預覽域名（含專案編號）。如果你已經用開 <span className="font-mono text-pink-600">pages.dev</span> 或縮好短網址，可以直接喺下面貼上並儲存！
+                  </p>
+                )}
               </div>
 
-              {/* Short URL Guide */}
+              {/* Custom Short URL Binding + Shortener Links */}
               <div className="p-4 rounded-3xl bg-pink-50/60 border border-pink-200 space-y-3">
                 <div className="flex items-center gap-1.5 text-pink-600 text-xs font-black">
                   <Link2 className="w-4 h-4" />
-                  <span>自訂好記的專屬短網址：</span>
+                  <span>設定專屬短網址（同步更新 QR Code ＆ 宣傳文案）：</span>
                 </div>
 
+                <form onSubmit={handleSaveCustomShortUrl} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="url"
+                    value={shortUrlDraft}
+                    onChange={(e) => setShortUrlDraft(e.target.value)}
+                    placeholder="貼上你的 pages.dev 或 tinyurl 短網址"
+                    className="flex-1 px-3 py-2 text-xs bg-white border border-pink-200 rounded-xl text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-pink-300"
+                  />
+                  <button
+                    type="submit"
+                    className="px-3.5 py-2 text-xs font-black text-white bg-pink-500 hover:bg-pink-600 rounded-xl transition-colors shrink-0 cursor-pointer"
+                  >
+                    {shortUrlSavedToast ? '已套用 ✓' : '套用'}
+                  </button>
+                </form>
+
                 <p className="text-xs text-slate-600 leading-relaxed font-bold">
-                  你可以將上面呢串網址縮成好似{' '}
-                  <span className="text-pink-600 font-mono">tinyurl.com/pair-Fish</span> 咁簡單嘅網址：
+                  未有短網址？可以用下面免費工具將預設網址縮成好似{' '}
+                  <span className="text-pink-600 font-mono">tinyurl.com/pair-kingdom</span> 咁簡短好記：
                 </p>
 
                 <div className="space-y-2 text-xs">
@@ -235,11 +339,11 @@ ${activeUrl}
                     <div>
                       <span className="text-slate-900 font-black block">TinyURL 自訂別名</span>
                       <span className="text-[11px] text-pink-500 font-bold">
-                        自訂專屬單字（例如 tinyurl.com/pair-Fish）
+                        自訂專屬英文短網址（最推薦貼文使用）
                       </span>
                     </div>
                     <a
-                      href={`https://tinyurl.com/create.php?url=${encodeURIComponent(activeUrl)}`}
+                      href={`https://tinyurl.com/create.php?url=${encodeURIComponent(cleanCurrentUrl)}`}
                       target="_blank"
                       rel="noreferrer"
                       className="px-3 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded-xl font-bold flex items-center gap-1 shadow-xs"
