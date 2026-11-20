@@ -458,12 +458,14 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                                 caption: `🎂 祝「${todayBirthdayNotice.recipientName}」生日快樂！`,
                               });
                             }}
+                            data-protect-media="true"
                             className="group relative bg-white p-1.5 pb-2 rounded-2xl shadow-lg ring-2 ring-amber-300 hover:ring-rose-400 transition-all shrink-0 cursor-pointer hover:-rotate-1 active:scale-95"
                             title="點擊放大睇相片"
                           >
                             <img
                               src={todayBirthdayNotice.photoDataUrl}
                               alt={`${todayBirthdayNotice.recipientName} 生日寫真`}
+                              draggable={false}
                               className="w-36 h-36 sm:w-40 sm:h-40 object-cover rounded-xl"
                             />
                             <span className="absolute -top-2 -left-2 px-2 py-0.5 rounded-lg bg-gradient-to-r from-amber-400 to-rose-500 text-white text-[10px] font-black shadow-sm">
@@ -643,12 +645,14 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                               caption: `💌 致「${todayConfessionNotice.recipientName}」的紀念相片`,
                             });
                           }}
+                          data-protect-media="true"
                           className="group relative bg-white p-1.5 pb-2 rounded-2xl shadow-md ring-2 ring-rose-200 hover:ring-pink-400 transition-all shrink-0 cursor-pointer hover:rotate-1 active:scale-95"
                           title="點擊放大睇相片"
                         >
                           <img
                             src={todayConfessionNotice.photoDataUrl}
                             alt={`${todayConfessionNotice.recipientName} 紀念相片`}
+                            draggable={false}
                             className="w-32 h-32 sm:w-36 sm:h-36 object-cover rounded-xl"
                           />
                           <span className="absolute -top-2 -left-2 px-2 py-0.5 rounded-lg bg-gradient-to-r from-pink-500 to-rose-500 text-white text-[10px] font-black shadow-sm">
@@ -727,11 +731,15 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <img
-              src={zoomedPhoto.src}
-              alt={zoomedPhoto.caption}
-              className="w-full max-h-[75vh] object-contain rounded-2xl bg-pink-50/40"
-            />
+            <div data-protect-media="true" className="relative rounded-2xl overflow-hidden bg-pink-50/40">
+              <img
+                src={zoomedPhoto.src}
+                alt={zoomedPhoto.caption}
+                draggable={false}
+                className="w-full max-h-[75vh] object-contain"
+              />
+              <div className="absolute inset-0 z-10" aria-hidden="true" />
+            </div>
           </div>
         </div>
       )}

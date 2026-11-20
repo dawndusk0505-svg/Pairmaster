@@ -967,6 +967,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
                             alt={card.name}
                             loading="eager"
                             decoding="sync"
+                            draggable={false}
                             referrerPolicy="no-referrer"
                             className="relative z-10 w-full h-full object-cover"
                           />
@@ -1088,16 +1089,17 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-9 lg:grid-cols-12 gap-2">
+          <div data-protect-media="true" className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-9 lg:grid-cols-12 gap-2">
             {activeTheme.items.map((spirit) => (
               <div key={spirit.id} className="flex flex-col items-center text-center group">
-                <div className="w-full aspect-square rounded-2xl overflow-hidden border-2 border-pink-200 bg-pink-50 shadow-xs group-hover:scale-105 group-hover:border-pink-400 transition-transform duration-150">
+                <div className="relative w-full aspect-square rounded-2xl overflow-hidden border-2 border-pink-200 bg-pink-50 shadow-xs group-hover:scale-105 group-hover:border-pink-400 transition-transform duration-150">
                   {spirit.imageUrl ? (
                     <img
                       src={spirit.imageUrl}
                       alt={spirit.name}
                       loading="lazy"
                       decoding="async"
+                      draggable={false}
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
                     />
@@ -1106,6 +1108,7 @@ export const FlipMatchGame: React.FC<FlipMatchGameProps> = ({
                       {spirit.symbol}
                     </div>
                   )}
+                  <div className="absolute inset-0 z-10" aria-hidden="true" />
                 </div>
                 <span className="text-[10px] font-bold text-slate-700 mt-1 truncate w-full">
                   {spirit.name}

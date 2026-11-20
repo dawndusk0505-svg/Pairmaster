@@ -873,12 +873,16 @@ export const CompatibilityMatcher: React.FC = () => {
 
         {/* Constellation Art Card */}
         <div className="rounded-3xl border-2 border-pink-200 bg-gradient-to-r from-pink-100/60 to-rose-100/40 p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-6">
-          <img
-            src={constellationImg}
-            alt="星盤宿命繪卷"
-            referrerPolicy="no-referrer"
-            className="w-24 h-24 rounded-3xl object-cover border-2 border-pink-300 shrink-0 shadow-md"
-          />
+          <div data-protect-media="true" className="relative shrink-0">
+            <img
+              src={constellationImg}
+              alt="星盤宿命繪卷"
+              draggable={false}
+              referrerPolicy="no-referrer"
+              className="w-24 h-24 rounded-3xl object-cover border-2 border-pink-300 shadow-md"
+            />
+            <div className="absolute inset-0 z-10 rounded-3xl" aria-hidden="true" />
+          </div>
           <div className="space-y-1.5 text-center sm:text-left">
             <span className="text-xs text-pink-600 font-bold tracking-wider">
               命定和鳴詩籤

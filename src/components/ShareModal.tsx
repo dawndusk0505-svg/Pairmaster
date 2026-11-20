@@ -171,7 +171,12 @@ ${activeUrl}
               <div className="bg-pink-50/70 border border-pink-200 rounded-3xl p-4 flex flex-col sm:flex-row items-center gap-5">
                 {qrDataUrl ? (
                   <div className="p-2 bg-white rounded-2xl shadow-md border-2 border-pink-200 shrink-0">
-                    <img src={qrDataUrl} alt="掃描進入配對王國" className="w-32 h-32 block rounded-xl" />
+                    <img
+                      src={qrDataUrl}
+                      alt="掃描進入配對王國"
+                      data-allow-save="true"
+                      className="w-32 h-32 block rounded-xl"
+                    />
                   </div>
                 ) : (
                   <div className="w-32 h-32 bg-pink-100 rounded-2xl animate-pulse shrink-0" />

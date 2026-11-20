@@ -50,6 +50,53 @@ function AppContent() {
     preloadThemeItems(MATCH_THEMES[0].items);
   }, []);
 
+  // 防右鍵另存、防拖曳圖片（保留輸入框複製貼上與標記為 data-allow-save 的 QR Code）
+  useEffect(() => {
+    const isAllowedSaveTarget = (target: EventTarget | null): Element | null => {
+      if (!(target instanceof Element)) return null;
+      return target.closest('[data-allow-save="true"]');
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      const target = e.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      if (isAllowedSaveTarget(target)) return;
+
+      if (
+        target instanceof HTMLImageElement ||
+        target instanceof HTMLCanvasElement ||
+        (target instanceof Element && target.closest('[data-protect-media="true"]'))
+      ) {
+        e.preventDefault();
+      }
+    };
+
+    const handleDragStart = (e: DragEvent) => {
+      const target = e.target;
+      if (isAllowedSaveTarget(target)) return;
+      if (
+        target instanceof HTMLImageElement ||
+        target instanceof HTMLCanvasElement ||
+        (target instanceof Element && target.closest('[data-protect-media="true"]'))
+      ) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('dragstart', handleDragStart);
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('dragstart', handleDragStart);
+    };
+  }, []);
+
   const openNoticeSubmit = (type: 'birthday' | 'confession' = 'birthday') => {
     setSubmitModalDefaultType(type);
     setIsSubmitModalOpen(true);
@@ -273,15 +320,20 @@ function AppContent() {
 
             {/* Right Column: Visual Game Banner */}
             <div className="lg:col-span-5 relative">
-              <div className="relative rounded-3xl overflow-hidden border-2 border-pink-200/80 shadow-xl shadow-pink-100 group">
+              <div
+                data-protect-media="true"
+                className="relative rounded-3xl overflow-hidden border-2 border-pink-200/80 shadow-xl shadow-pink-100 group select-none"
+              >
                 <img
                   src={matchBannerImg}
                   alt="配對王國概念繪卷"
+                  draggable={false}
                   referrerPolicy="no-referrer"
                   className="w-full h-auto object-cover aspect-[16/9] group-hover:scale-102 transition-transform duration-500"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-pink-900/45 via-transparent to-transparent" />
-                <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-xs text-white drop-shadow-md">
+                <div className="absolute inset-0 z-10" aria-hidden="true" />
+                <div className="absolute bottom-3 left-4 right-4 z-20 flex items-center justify-between text-xs text-white drop-shadow-md">
                   <span className="font-bold">✨ 配對王國 · 糖果萌星登場</span>
                   <span className="text-[11px] font-bold opacity-95">即點即玩 →</span>
                 </div>

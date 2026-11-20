@@ -6,6 +6,37 @@
   body {
     font-family: 'Zen Maru Gothic', 'M PLUS Rounded 1c', 'Fredoka', 'Quicksand', 'Yuanti SC', 'Microsoft JhengHei', cursive, sans-serif;
   }
+
+  /* 保護網站原創精靈插畫＆遊戲卡牌：防止手機長按存圖、拖曳與選取（保留 QR Code 下載與互動畫布觸控） */
+  img:not([data-allow-save="true"]) {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+  }
+
+  canvas:not([data-allow-save="true"]) {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+  }
+
+  [data-protect-media="true"] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+  }
+
+  input,
+  textarea,
+  select,
+  [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
 }
 
 @layer utilities {

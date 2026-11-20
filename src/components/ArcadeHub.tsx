@@ -135,49 +135,51 @@ export const ArcadeHub: React.FC<ArcadeHubProps> = ({
       </div>
 
       {/* Only mount the active selected game inside Suspense so idle games cost zero CPU/RAM */}
-      <Suspense
-        fallback={
-          <div className="max-w-3xl mx-auto my-8 p-10 rounded-3xl bg-white/90 border border-pink-200 text-center space-y-2 shadow-sm">
-            <div className="w-10 h-10 rounded-2xl bg-pink-100 text-pink-500 flex items-center justify-center mx-auto animate-bounce text-xl">
-              {currentMeta.iconEmoji}
+      <div data-protect-media="true">
+        <Suspense
+          fallback={
+            <div className="max-w-3xl mx-auto my-8 p-10 rounded-3xl bg-white/90 border border-pink-200 text-center space-y-2 shadow-sm">
+              <div className="w-10 h-10 rounded-2xl bg-pink-100 text-pink-500 flex items-center justify-center mx-auto animate-bounce text-xl">
+                {currentMeta.iconEmoji}
+              </div>
+              <p className="text-sm font-black text-slate-700">正在載入《{currentMeta.title}》...</p>
+              <p className="text-xs font-bold text-slate-400">按需分包加速載入中，請稍候～</p>
             </div>
-            <p className="text-sm font-black text-slate-700">正在載入《{currentMeta.title}》...</p>
-            <p className="text-xs font-bold text-slate-400">按需分包加速載入中，請稍候～</p>
-          </div>
-        }
-      >
-        {selectedGame === 'flip' && (
-          <FlipMatchGame
-            customTheme={customTheme}
-            onUpdateCustomTheme={onUpdateCustomTheme}
-            onOpenMyRecords={onOpenMyRecords}
-            isActiveTab={isActiveTab}
-          />
-        )}
-        {selectedGame === 'link' && (
-          <LinkMatchGame
-            customTheme={customTheme}
-            onUpdateCustomTheme={onUpdateCustomTheme}
-            onOpenMyRecords={onOpenMyRecords}
-            isActiveTab={isActiveTab}
-          />
-        )}
-        {selectedGame === 'merge' && (
-          <SpiritMergeGame isActiveTab={isActiveTab} onOpenMyRecords={onOpenMyRecords} />
-        )}
-        {selectedGame === 'cpstack' && (
-          <CoupleStackGame isActiveTab={isActiveTab} onOpenMyRecords={onOpenMyRecords} />
-        )}
-        {selectedGame === 'conveyor' && (
-          <ConveyorRushGame isActiveTab={isActiveTab} onOpenMyRecords={onOpenMyRecords} />
-        )}
-        {selectedGame === 'tower' && (
-          <SpiritTowerGame isActiveTab={isActiveTab} onOpenMyRecords={onOpenMyRecords} />
-        )}
-        {selectedGame === 'duel' && (
-          <FriendDuelGame isActiveTab={isActiveTab} onOpenMyRecords={onOpenMyRecords} />
-        )}
-      </Suspense>
+          }
+        >
+          {selectedGame === 'flip' && (
+            <FlipMatchGame
+              customTheme={customTheme}
+              onUpdateCustomTheme={onUpdateCustomTheme}
+              onOpenMyRecords={onOpenMyRecords}
+              isActiveTab={isActiveTab}
+            />
+          )}
+          {selectedGame === 'link' && (
+            <LinkMatchGame
+              customTheme={customTheme}
+              onUpdateCustomTheme={onUpdateCustomTheme}
+              onOpenMyRecords={onOpenMyRecords}
+              isActiveTab={isActiveTab}
+            />
+          )}
+          {selectedGame === 'merge' && (
+            <SpiritMergeGame isActiveTab={isActiveTab} onOpenMyRecords={onOpenMyRecords} />
+          )}
+          {selectedGame === 'cpstack' && (
+            <CoupleStackGame isActiveTab={isActiveTab} onOpenMyRecords={onOpenMyRecords} />
+          )}
+          {selectedGame === 'conveyor' && (
+            <ConveyorRushGame isActiveTab={isActiveTab} onOpenMyRecords={onOpenMyRecords} />
+          )}
+          {selectedGame === 'tower' && (
+            <SpiritTowerGame isActiveTab={isActiveTab} onOpenMyRecords={onOpenMyRecords} />
+          )}
+          {selectedGame === 'duel' && (
+            <FriendDuelGame isActiveTab={isActiveTab} onOpenMyRecords={onOpenMyRecords} />
+          )}
+        </Suspense>
+      </div>
     </div>
   );
 };

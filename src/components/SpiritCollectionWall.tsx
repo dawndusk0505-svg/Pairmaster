@@ -130,11 +130,15 @@ export const SpiritCollectionWall: React.FC = () => {
         <div className="bg-white border-2 border-amber-300 rounded-3xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-4 animate-in fade-in">
           <div className="flex items-center gap-3">
             {gachaResult.item.imageUrl && (
-              <img
-                src={gachaResult.item.imageUrl}
-                alt={gachaResult.item.name}
-                className="w-16 h-16 rounded-2xl object-cover border-2 border-amber-300 shadow-sm"
-              />
+              <div data-protect-media="true" className="relative shrink-0">
+                <img
+                  src={gachaResult.item.imageUrl}
+                  alt={gachaResult.item.name}
+                  draggable={false}
+                  className="w-16 h-16 rounded-2xl object-cover border-2 border-amber-300 shadow-sm"
+                />
+                <div className="absolute inset-0 z-10 rounded-2xl" aria-hidden="true" />
+              </div>
             )}
             <div>
               <span
@@ -239,25 +243,33 @@ export const SpiritCollectionWall: React.FC = () => {
                   )}
                 </div>
 
-                <div className="flex items-center justify-center gap-3 py-1">
+                <div data-protect-media="true" className="flex items-center justify-center gap-3 py-1">
                   {sp?.imageUrl && (
-                    <img
-                      src={sp.imageUrl}
-                      alt={sp.name}
-                      className={`w-16 h-16 rounded-2xl object-cover border-2 ${
-                        unlockedSet.has(cp.spiritId) ? 'border-pink-400' : 'border-slate-300 grayscale'
-                      }`}
-                    />
+                    <div className="relative shrink-0">
+                      <img
+                        src={sp.imageUrl}
+                        alt={sp.name}
+                        draggable={false}
+                        className={`w-16 h-16 rounded-2xl object-cover border-2 ${
+                          unlockedSet.has(cp.spiritId) ? 'border-pink-400' : 'border-slate-300 grayscale'
+                        }`}
+                      />
+                      <div className="absolute inset-0 z-10 rounded-2xl" aria-hidden="true" />
+                    </div>
                   )}
                   <Heart className="w-5 h-5 text-rose-500 fill-rose-400 shrink-0" />
                   {pr?.imageUrl && (
-                    <img
-                      src={pr.imageUrl}
-                      alt={pr.name}
-                      className={`w-16 h-16 rounded-2xl object-cover border-2 ${
-                        unlockedSet.has(cp.propId) ? 'border-amber-400' : 'border-slate-300 grayscale'
-                      }`}
-                    />
+                    <div className="relative shrink-0">
+                      <img
+                        src={pr.imageUrl}
+                        alt={pr.name}
+                        draggable={false}
+                        className={`w-16 h-16 rounded-2xl object-cover border-2 ${
+                          unlockedSet.has(cp.propId) ? 'border-amber-400' : 'border-slate-300 grayscale'
+                        }`}
+                      />
+                      <div className="absolute inset-0 z-10 rounded-2xl" aria-hidden="true" />
+                    </div>
                   )}
                 </div>
 
@@ -308,11 +320,12 @@ export const SpiritCollectionWall: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="relative flex justify-center py-1">
+                <div data-protect-media="true" className="relative flex justify-center py-1">
                   {item.imageUrl ? (
                     <img
                       src={item.imageUrl}
                       alt={item.name}
+                      draggable={false}
                       className={`w-24 h-24 rounded-2xl object-cover border-2 transition-all ${
                         unlocked
                           ? 'border-pink-200'
@@ -322,8 +335,9 @@ export const SpiritCollectionWall: React.FC = () => {
                   ) : (
                     <span className="text-4xl">{item.symbol}</span>
                   )}
+                  <div className="absolute inset-0 z-10" aria-hidden="true" />
                   {!unlocked && (
-                    <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="absolute inset-0 z-20 flex items-center justify-center">
                       <span className="w-8 h-8 rounded-full bg-slate-900/60 text-white flex items-center justify-center">
                         <Lock className="w-4 h-4" />
                       </span>
