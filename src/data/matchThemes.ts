@@ -10,6 +10,30 @@ import spiritMelonDino from '../assets/images/spirit_melon_dino_1794759573621.jp
 import spiritGrapePenguin from '../assets/images/spirit_grape_penguin_1794759574222.jpg';
 import spiritCherryFox from '../assets/images/spirit_cherry_fox_1794759573611.jpg';
 import spiritMilkSeal from '../assets/images/spirit_milk_seal_1794759575080.jpg';
+import spiritMatchaTurtle from '../assets/images/spirit_matcha_turtle_1795178238628.jpg';
+import spiritBlueberryWhale from '../assets/images/spirit_blueberry_whale_1795178239051.jpg';
+import spiritCaramelShiba from '../assets/images/spirit_caramel_shiba_1795178239272.jpg';
+import spiritSeasaltElephant from '../assets/images/spirit_seasalt_elephant_1795178238737.jpg';
+import spiritVelvetHedgehog from '../assets/images/spirit_velvet_hedgehog_1795178238194.jpg';
+import spiritSesamePanda from '../assets/images/spirit_sesame_panda_1795178239510.jpg';
+import spiritLycheeUnicorn from '../assets/images/spirit_lychee_unicorn_1795178239472.jpg';
+import spiritRoseDeer from '../assets/images/spirit_rose_deer_1795178239097.jpg';
+import spiritCocoaSquirrel from '../assets/images/spirit_cocoa_squirrel_1795178238529.jpg';
+import spiritSodaJellyfish from '../assets/images/spirit_soda_jellyfish_1795178239077.jpg';
+import spiritToffeeLion from '../assets/images/spirit_toffee_lion_1795178239267.jpg';
+import spiritEarlgreyOwl from '../assets/images/spirit_earlgrey_owl_1795178238973.jpg';
+import spiritStarAxolotl from '../assets/images/spirit_star_axolotl_1795178238925.jpg';
+import propStarWand from '../assets/images/prop_star_wand_1795178642249.jpg';
+import propBobaCup from '../assets/images/prop_boba_cup_1795178642080.jpg';
+import propCrystalBall from '../assets/images/prop_crystal_ball_1795178642309.jpg';
+import propPerfumeBottle from '../assets/images/prop_perfume_bottle_1795178642613.jpg';
+import propRainbowBalloon from '../assets/images/prop_rainbow_balloon_1795178642708.jpg';
+import propMusicBox from '../assets/images/prop_music_box_1795178642273.jpg';
+import propWatermelonSlice from '../assets/images/prop_watermelon_slice_1795178642025.jpg';
+import propMatchaTeapot from '../assets/images/prop_matcha_teapot_1795178642847.jpg';
+import propLoveMailbox from '../assets/images/prop_love_mailbox_1795178642188.jpg';
+import propCandyConsole from '../assets/images/prop_candy_console_1795178642074.jpg';
+import propBerryCamera from '../assets/images/prop_berry_camera_1795178642286.jpg';
 
 export interface ThemeItem {
   id: string;
@@ -34,16 +58,41 @@ export const CANDY_SPIRIT_ITEMS: ThemeItem[] = [
   { id: 'cs1', name: '藍絨波波', symbol: '🩵', color: 'text-sky-400', imageUrl: spiritBluePuff, category: '海報主角' },
   { id: 'cs2', name: '蜜桃粉兔', symbol: '🐰', color: 'text-pink-500', imageUrl: spiritPinkBunny, category: '海報主角' },
   { id: 'cs3', name: '暖陽小橘', symbol: '🍊', color: 'text-amber-500', imageUrl: spiritOrangeCitrus, category: '海報主角' },
-  // 9 位全新延伸糖果精靈夥伴
-  { id: 'cs4', name: '薄荷萌蛙', symbol: '🐸', color: 'text-emerald-500', imageUrl: spiritMintFrog, category: '新夥伴' },
-  { id: 'cs5', name: '布丁小雞', symbol: '🐥', color: 'text-yellow-500', imageUrl: spiritLemonChick, category: '新夥伴' },
-  { id: 'cs6', name: '香芋星喵', symbol: '🐱', color: 'text-purple-400', imageUrl: spiritLavenderCat, category: '新夥伴' },
-  { id: 'cs7', name: '草莓軟糖熊', symbol: '🐻', color: 'text-rose-500', imageUrl: spiritStrawberryBear, category: '新夥伴' },
-  { id: 'cs8', name: '棉花雲羊', symbol: '🐑', color: 'text-amber-400', imageUrl: spiritCloudLamb, category: '新夥伴' },
-  { id: 'cs9', name: '哈密瓜龍', symbol: '🦕', color: 'text-teal-500', imageUrl: spiritMelonDino, category: '新夥伴' },
-  { id: 'cs10', name: '葡萄企鵝', symbol: '🐧', color: 'text-indigo-400', imageUrl: spiritGrapePenguin, category: '新夥伴' },
-  { id: 'cs11', name: '櫻桃甜狐', symbol: '🦊', color: 'text-orange-400', imageUrl: spiritCherryFox, category: '新夥伴' },
-  { id: 'cs12', name: '奶蓋海豹', symbol: '🦭', color: 'text-sky-400', imageUrl: spiritMilkSeal, category: '新夥伴' },
+  // 高辨識度動物糖果精靈（已篩走撞色撞樣款式）
+  { id: 'cs4', name: '薄荷萌蛙', symbol: '🐸', color: 'text-emerald-500', imageUrl: spiritMintFrog, category: '糖果精靈' },
+  { id: 'cs5', name: '布丁小雞', symbol: '🐥', color: 'text-yellow-500', imageUrl: spiritLemonChick, category: '糖果精靈' },
+  { id: 'cs6', name: '香芋星喵', symbol: '🐱', color: 'text-purple-400', imageUrl: spiritLavenderCat, category: '糖果精靈' },
+  { id: 'cs7', name: '草莓軟糖熊', symbol: '🐻', color: 'text-rose-500', imageUrl: spiritStrawberryBear, category: '糖果精靈' },
+  { id: 'cs8', name: '棉花雲羊', symbol: '🐑', color: 'text-amber-400', imageUrl: spiritCloudLamb, category: '糖果精靈' },
+  { id: 'cs9', name: '哈密瓜龍', symbol: '🦕', color: 'text-teal-500', imageUrl: spiritMelonDino, category: '糖果精靈' },
+  { id: 'cs10', name: '葡萄企鵝', symbol: '🐧', color: 'text-indigo-400', imageUrl: spiritGrapePenguin, category: '糖果精靈' },
+  { id: 'cs11', name: '櫻桃甜狐', symbol: '🦊', color: 'text-orange-400', imageUrl: spiritCherryFox, category: '糖果精靈' },
+  { id: 'cs12', name: '奶蓋海豹', symbol: '🦭', color: 'text-sky-400', imageUrl: spiritMilkSeal, category: '糖果精靈' },
+  { id: 'cs13', name: '抹茶紅豆龜', symbol: '🐢', color: 'text-emerald-600', imageUrl: spiritMatchaTurtle, category: '糖果精靈' },
+  { id: 'cs14', name: '藍莓泡泡鯨', symbol: '🐳', color: 'text-blue-500', imageUrl: spiritBlueberryWhale, category: '糖果精靈' },
+  { id: 'cs15', name: '焦糖布丁柴', symbol: '🐕', color: 'text-amber-600', imageUrl: spiritCaramelShiba, category: '糖果精靈' },
+  { id: 'cs17', name: '海鹽雲朵象', symbol: '🐘', color: 'text-cyan-500', imageUrl: spiritSeasaltElephant, category: '糖果精靈' },
+  { id: 'cs18', name: '紅絲絨刺蝟', symbol: '🦔', color: 'text-rose-500', imageUrl: spiritVelvetHedgehog, category: '糖果精靈' },
+  { id: 'cs19', name: '黑芝麻熊貓', symbol: '🐼', color: 'text-slate-600', imageUrl: spiritSesamePanda, category: '糖果精靈' },
+  { id: 'cs20', name: '荔枝夢獨角', symbol: '🦄', color: 'text-fuchsia-400', imageUrl: spiritLycheeUnicorn, category: '糖果精靈' },
+  { id: 'cs22', name: '玫瑰馬卡龍鹿', symbol: '🦌', color: 'text-pink-400', imageUrl: spiritRoseDeer, category: '糖果精靈' },
+  { id: 'cs23', name: '可可松鼠', symbol: '🐿️', color: 'text-amber-700', imageUrl: spiritCocoaSquirrel, category: '糖果精靈' },
+  { id: 'cs25', name: '蘇打水母', symbol: '🪼', color: 'text-sky-400', imageUrl: spiritSodaJellyfish, category: '糖果精靈' },
+  { id: 'cs26', name: '太妃糖獅', symbol: '🦁', color: 'text-amber-500', imageUrl: spiritToffeeLion, category: '糖果精靈' },
+  { id: 'cs31', name: '伯爵茶貓頭鷹', symbol: '🦉', color: 'text-indigo-400', imageUrl: spiritEarlgreyOwl, category: '糖果精靈' },
+  { id: 'cs36', name: '星願蠑螈', symbol: '✨', color: 'text-violet-500', imageUrl: spiritStarAxolotl, category: '糖果精靈' },
+  // 精靈魔法用具與鮮明水果化身（幾何輪廓＋高對比色）
+  { id: 'sp1', name: '星願魔法杖', symbol: '🪄', color: 'text-amber-400', imageUrl: propStarWand, category: '精靈用具' },
+  { id: 'sp2', name: '黑糖珍奶杯', symbol: '🧋', color: 'text-amber-700', imageUrl: propBobaCup, category: '精靈用具' },
+  { id: 'sp3', name: '魔法水晶球', symbol: '🔮', color: 'text-violet-500', imageUrl: propCrystalBall, category: '精靈用具' },
+  { id: 'sp4', name: '夢幻香水瓶', symbol: '🎀', color: 'text-rose-500', imageUrl: propPerfumeBottle, category: '精靈用具' },
+  { id: 'sp5', name: '彩虹熱氣球', symbol: '🎈', color: 'text-sky-500', imageUrl: propRainbowBalloon, category: '精靈用具' },
+  { id: 'sp6', name: '雲朵音樂盒', symbol: '🎵', color: 'text-indigo-500', imageUrl: propMusicBox, category: '精靈用具' },
+  { id: 'sp7', name: '西瓜切角精靈', symbol: '🍉', color: 'text-red-500', imageUrl: propWatermelonSlice, category: '水果化身' },
+  { id: 'sp8', name: '皇家抹茶茶壺', symbol: '🫖', color: 'text-emerald-600', imageUrl: propMatchaTeapot, category: '精靈用具' },
+  { id: 'sp9', name: '幸運糖果郵筒', symbol: '💌', color: 'text-rose-600', imageUrl: propLoveMailbox, category: '精靈用具' },
+  { id: 'sp10', name: '復古像素掌機', symbol: '🎮', color: 'text-teal-500', imageUrl: propCandyConsole, category: '精靈用具' },
+  { id: 'sp11', name: '草莓牛奶相機', symbol: '📷', color: 'text-pink-500', imageUrl: propBerryCamera, category: '精靈用具' },
 ];
 
 export const MATCH_THEMES: MatchTheme[] = [
@@ -51,7 +100,7 @@ export const MATCH_THEMES: MatchTheme[] = [
     id: 'candy-spirits',
     name: '糖果萌星',
     enName: 'Candy Match Spirits',
-    description: '海報 3 位元祖小精靈 × 9 位全新 3D 糖果精靈夥伴',
+    description: '25 位零撞樣糖果精靈 × 11 款精靈用具與水果化身',
     icon: '🍬',
     items: CANDY_SPIRIT_ITEMS,
   },

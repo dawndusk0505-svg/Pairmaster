@@ -36,6 +36,7 @@ import {
 } from '../contexts/FirebaseContext';
 import { soundFx } from '../utils/audio';
 import { compressNoticePhoto } from '../utils/imageCompress';
+import { GAME_MODE_LABELS, formatDifficultyLabel } from '../data/spiritPairings';
 
 export type AdminTab = 'requests' | 'scheduled' | 'birthday' | 'confession' | 'names' | 'visitors' | 'admins';
 
@@ -358,10 +359,14 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
       .sort((a, b) => b.highScore - a.highScore)
       .filter((entry) => {
         if (!q) return true;
+        const modeLabel = (GAME_MODE_LABELS[entry.gameMode] || entry.gameMode).toLowerCase();
+        const diffLabel = formatDifficultyLabel(entry.gameMode, entry.difficultyId).toLowerCase();
         return (
           entry.displayName.toLowerCase().includes(q) ||
           entry.themeName.toLowerCase().includes(q) ||
-          entry.difficultyId.toLowerCase().includes(q)
+          entry.difficultyId.toLowerCase().includes(q) ||
+          modeLabel.includes(q) ||
+          diffLabel.includes(q)
         );
       });
   }, [leaderboardEntries, nameSearchQuery]);
@@ -1313,12 +1318,12 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                   </button>
                 </div>
 
-                {/* 12 Candy Spirit Quick Picker */}
+                {/* Candy Spirit Quick Picker */}
                 <div>
                   <p className="text-[11px] font-black text-pink-700 mb-1.5">
-                    一鍵切換成 12 位糖果小精靈角色名：
+                    一鍵切換成 {SPIRIT_CHARACTER_OPTIONS.length} 位糖果小精靈角色名：
                   </p>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-48 overflow-y-auto pr-1">
                     {SPIRIT_CHARACTER_OPTIONS.map((spirit) => {
                       const isCurrent = gameDisplayName === spirit.name;
                       return (
@@ -1431,7 +1436,8 @@ export const AdminNoticeModal: React.FC<AdminNoticeModalProps> = ({ isOpen, onCl
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500">
-                                {entry.gameMode === 'flip' ? '翻牌記憶' : '連連看'} · {entry.themeName} · {entry.difficultyId}
+                                {GAME_MODE_LABELS[entry.gameMode] || entry.gameMode} · {entry.themeName} ·{' '}
+                                {formatDifficultyLabel(entry.gameMode, entry.difficultyId)}
                               </p>
                             </div>
 

@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { Heart, X, Star, MessageCircle, Send, RotateCcw, MapPin, Sparkles } from 'lucide-react';
+import { Heart, X, Star, MessageCircle, Send, RotateCcw, MapPin, Sparkles, Trash2 } from 'lucide-react';
 import { SWIPE_PROFILES, SwipeProfile } from '../data/socialAndFortune';
 import { soundFx } from '../utils/audio';
+import { useFirebase } from '../contexts/FirebaseContext';
 
 interface Message {
   id: string;
@@ -11,12 +12,52 @@ interface Message {
   time: string;
 }
 
+function loadJsonFromStorage<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function generateContextualReply(profile: SwipeProfile, userText: string, turnNumber: number): string {
+  const choices = profile.replies[0]?.choices || [];
+  const matchedChoice = choices.find((c) => c.text === userText);
+  if (matchedChoice) {
+    return matchedChoice.response;
+  }
+
+  const hobby = profile.interests[turnNumber % profile.interests.length] || '探索生活';
+  const secondaryHobby = profile.interests[(turnNumber + 1) % profile.interests.length] || '美食';
+
+  const multiTurnReplies = [
+    `哈哈同感！我平時最鍾意就係「${hobby}」，身為 ${profile.mbti} 真係好期待同你多啲交流～ ✨`,
+    `你講得好中呀！以我嘅 ${profile.zodiac} 直覺，我哋一定好啱傾，不如得閒一齊試下「${secondaryHobby}」？☕`,
+    `係咪呀～做「${profile.occupation}」平時好少遇到咁同頻嘅人！你平時放假最鍾意做咩呀？🌸`,
+    `多謝你同我傾計！同你聊天感覺好輕鬆，希望今日嘅 PairMaster 都可以帶俾你好多好運💖`,
+  ];
+
+  return multiTurnReplies[turnNumber % multiTurnReplies.length];
+}
+
 export const SwipeMatchSimulator: React.FC = () => {
+  const { user } = useFirebase();
+  const uidKey = user?.uid || 'guest';
+  const matchesKey = `pairmaster_swipe_matches_v1_${uidKey}`;
+  const chatsKey = `pairmaster_swipe_chats_v1_${uidKey}`;
+
   const [profiles, setProfiles] = useState<SwipeProfile[]>(SWIPE_PROFILES);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [matchedProfile, setMatchedProfile] = useState<SwipeProfile | null>(null);
-  const [matchedList, setMatchedList] = useState<SwipeProfile[]>([]);
-  const [chatHistoryMap, setChatHistoryMap] = useState<Record<string, Message[]>>({});
+  const [matchedList, setMatchedList] = useState<SwipeProfile[]>(() =>
+    loadJsonFromStorage<SwipeProfile[]>(matchesKey, [])
+  );
+  const [chatHistoryMap, setChatHistoryMap] = useState<Record<string, Message[]>>(() =>
+    loadJsonFromStorage<Record<string, Message[]>>(chatsKey, {})
+  );
   const [showChatModal, setShowChatModal] = useState(false);
   const [inputText, setInputText] = useState('');
   const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | 'up' | null>(null);
@@ -26,6 +67,29 @@ export const SwipeMatchSimulator: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Reload persisted matches/chats when account changes
+  useEffect(() => {
+    setMatchedList(loadJsonFromStorage<SwipeProfile[]>(matchesKey, []));
+    setChatHistoryMap(loadJsonFromStorage<Record<string, Message[]>>(chatsKey, {}));
+  }, [matchesKey, chatsKey]);
+
+  // Persist matches & chats automatically
+  useEffect(() => {
+    try {
+      localStorage.setItem(matchesKey, JSON.stringify(matchedList));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [matchesKey, matchedList]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(chatsKey, JSON.stringify(chatHistoryMap));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [chatsKey, chatHistoryMap]);
 
   const scheduleTimeout = useCallback((fn: () => void, ms: number) => {
     const id = setTimeout(fn, ms);
@@ -103,7 +167,6 @@ export const SwipeMatchSimulator: React.FC = () => {
     [currentProfile, swipeDirection, scheduleTimeout]
   );
 
-  // Keyboard swipe shortcuts when browsing cards (not typing in chat)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (showChatModal || matchedProfile || !currentProfile) return;
@@ -160,16 +223,18 @@ export const SwipeMatchSimulator: React.FC = () => {
   };
 
   const handleSendMessage = (textToSend?: string) => {
-    const text = textToSend || inputText;
-    if (!text.trim() || !matchedProfile) return;
+    const raw = textToSend || inputText;
+    const cleanText = raw.trim();
+    if (!cleanText || !matchedProfile) return;
 
     const targetProfile = matchedProfile;
+    const prevCount = (chatHistoryMap[targetProfile.id] || []).filter((m) => m.sender === 'user').length;
     soundFx.playClick();
     const newMsg: Message = {
       id: `${Date.now()}_u`,
       sender: 'user',
-      text: text.trim(),
-      time: '剛剛',
+      text: cleanText,
+      time: new Date().toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' }),
     };
 
     setChatHistoryMap((prev) => ({
@@ -179,12 +244,7 @@ export const SwipeMatchSimulator: React.FC = () => {
     setInputText('');
 
     scheduleTimeout(() => {
-      const choices = targetProfile.replies[0]?.choices || [];
-      const matchedChoice = choices.find((c) => c.text === text.trim());
-      const replyText = matchedChoice
-        ? matchedChoice.response
-        : `哈哈沒錯～我也這麼覺得！看來我們在 ${targetProfile.interests[0]} 上默契真的很合耶 ✨`;
-
+      const replyText = generateContextualReply(targetProfile, cleanText, prevCount);
       soundFx.playMatchSuccess(2);
       setChatHistoryMap((prev) => ({
         ...prev,
@@ -194,11 +254,11 @@ export const SwipeMatchSimulator: React.FC = () => {
             id: `${Date.now()}_m`,
             sender: 'match',
             text: replyText,
-            time: '剛剛',
+            time: new Date().toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' }),
           },
         ],
       }));
-    }, 550);
+    }, 520);
   };
 
   const handleResetDeck = () => {
@@ -208,6 +268,14 @@ export const SwipeMatchSimulator: React.FC = () => {
     setMatchedProfile(null);
     setShowChatModal(false);
     setDragOffset({ x: 0, y: 0 });
+  };
+
+  const handleClearMatches = () => {
+    soundFx.playClick();
+    setMatchedList([]);
+    setChatHistoryMap({});
+    setMatchedProfile(null);
+    setShowChatModal(false);
   };
 
   const cardStyle: React.CSSProperties =
@@ -224,18 +292,26 @@ export const SwipeMatchSimulator: React.FC = () => {
       <div className="text-center space-y-1">
         <h2 className="text-2xl font-black text-pink-600 tracking-tight">心動卡片配對 💖</h2>
         <p className="text-xs text-slate-500 font-bold">
-          左右拖曳卡片或點擊按鈕探索心靈夥伴（支援鍵盤 ← / → / ↑）
+          左右拖曳卡片或點擊按鈕探索心靈夥伴（配對與對話自動保存）
         </p>
       </div>
 
-      {/* Matched Friends Quick Strip (Re-open chats anytime!) */}
+      {/* Matched Friends Quick Strip */}
       {matchedList.length > 0 && (
         <div className="bg-white/85 border border-pink-200 rounded-2xl p-3 space-y-2 shadow-xs">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-black text-pink-600">
               💌 已配對心動好友 ({matchedList.length})
             </span>
-            <span className="text-[11px] text-slate-400 font-bold">點擊頭像繼續對話</span>
+            <button
+              type="button"
+              onClick={handleClearMatches}
+              className="text-[11px] font-bold text-slate-400 hover:text-rose-500 flex items-center gap-1 cursor-pointer"
+              title="清空已配對好友與對話紀錄"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>清空紀錄</span>
+            </button>
           </div>
           <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
             {matchedList.map((p) => (
@@ -274,7 +350,6 @@ export const SwipeMatchSimulator: React.FC = () => {
                 : ''
             }`}
           >
-            {/* Drag Feedback Stamp */}
             {dragOffset.x > 40 && (
               <div className="absolute top-6 left-6 z-20 px-3 py-1 border-2 border-pink-500 text-pink-600 font-black text-sm rounded-xl rotate-[-12deg] bg-white/90 pointer-events-none">
                 LIKE 💖
@@ -310,7 +385,6 @@ export const SwipeMatchSimulator: React.FC = () => {
               </div>
             </div>
 
-            {/* Profile Avatar Container */}
             <div className="my-auto py-2">
               <div className="w-full aspect-[4/3] rounded-3xl bg-gradient-to-br from-pink-100/80 via-rose-50 to-pink-50 border border-pink-200 flex flex-col items-center justify-center p-5 text-center space-y-2.5 relative overflow-hidden shadow-inner">
                 <div className="w-20 h-20 rounded-3xl bg-white border-2 border-pink-300 flex items-center justify-center text-4xl shadow-md shadow-pink-100">
@@ -325,7 +399,6 @@ export const SwipeMatchSimulator: React.FC = () => {
               </div>
             </div>
 
-            {/* Interests & Icebreaker */}
             <div className="space-y-2.5">
               <p className="text-xs text-pink-700 font-bold">
                 {currentProfile.interests.map((tag) => `#${tag}`).join(' · ')}

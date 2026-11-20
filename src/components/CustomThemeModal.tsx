@@ -49,7 +49,7 @@ export const CustomThemeModal: React.FC<CustomThemeModalProps> = ({
     } catch {
       // ignore
     }
-    return CANDY_SPIRIT_ITEMS.map((s, idx) => ({
+    return CANDY_SPIRIT_ITEMS.slice(0, 24).map((s, idx) => ({
       id: `custom_${idx}_${Date.now()}`,
       name: s.name,
       symbol: s.symbol,
@@ -157,7 +157,7 @@ export const CustomThemeModal: React.FC<CustomThemeModalProps> = ({
     soundFx.playClick();
     setErrorMsg(null);
     setItems(
-      CANDY_SPIRIT_ITEMS.map((s, idx) => ({
+      CANDY_SPIRIT_ITEMS.slice(0, 24).map((s, idx) => ({
         id: `custom_${idx}_${Date.now()}`,
         name: s.name,
         symbol: s.symbol,
@@ -178,7 +178,9 @@ export const CustomThemeModal: React.FC<CustomThemeModalProps> = ({
             </span>
             <div>
               <h3 className="text-base font-black text-slate-900">自訂專屬公仔 · 糖果色清單</h3>
-              <span className="text-xs text-pink-500 font-bold">自由挑選 12 位糖果小精靈或加入自訂公仔</span>
+              <span className="text-xs text-pink-500 font-bold">
+                自由挑選 {CANDY_SPIRIT_ITEMS.length} 款糖果精靈與用具或加入自訂公仔
+              </span>
             </div>
           </div>
 
@@ -217,7 +219,7 @@ export const CustomThemeModal: React.FC<CustomThemeModalProps> = ({
               className="text-[11px] text-pink-600 hover:text-pink-700 font-bold flex items-center gap-1 cursor-pointer"
             >
               <RotateCcw className="w-3 h-3" />
-              <span>重置為 12 位小精靈</span>
+              <span>重置為精選 24 位小精靈</span>
             </button>
           </div>
 

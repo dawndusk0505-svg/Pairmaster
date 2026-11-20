@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import confetti from 'canvas-confetti';
 import {
   Cake,
   HeartHandshake,
@@ -13,6 +14,8 @@ import {
   X,
   Music,
   Users,
+  Heart,
+  CheckCircle2,
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { soundFx } from '../utils/audio';
@@ -47,7 +50,10 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
     isAdmin,
     isSuperAdmin,
     pendingNoticeRequests,
+    myNoticeRequests,
     externalVisitorCount,
+    getNoticeReactionStats,
+    sendNoticeReaction,
   } = useFirebase();
 
   const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; caption: string } | null>(null);
@@ -56,6 +62,40 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
 
   const hasAnyNotice = Boolean(todayBirthdayNotice || todayConfessionNotice);
   const pendingCount = isSuperAdmin ? pendingNoticeRequests.length : 0;
+  const approvedUpcoming = myNoticeRequests.filter(
+    (r) => r.status === 'approved' && r.targetDate >= todayHkDate
+  );
+  const birthdayReaction = getNoticeReactionStats('birthday');
+  const confessionReaction = getNoticeReactionStats('confession');
+
+  const handleCelebrateReaction = (type: 'birthday' | 'confession') => {
+    soundFx.playMatchSuccess(2);
+    try {
+      confetti({
+        particleCount: 45,
+        spread: 65,
+        origin: { y: 0.35 },
+        colors:
+          type === 'birthday'
+            ? ['#fbbf24', '#fb7185', '#f472b6', '#38bdf8']
+            : ['#f472b6', '#fb7185', '#fda4af', '#e879f9'],
+      });
+    } catch {
+      // ignore
+    }
+    void sendNoticeReaction(type, type === 'birthday' ? 'cake' : 'heart');
+  };
+
+  useEffect(() => {
+    if (!zoomedPhoto) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setZoomedPhoto(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [zoomedPhoto]);
 
   useEffect(() => {
     if (!todayBirthdayNotice) {
@@ -185,6 +225,26 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
             >
               立即審核並發佈 →
             </button>
+          </div>
+        )}
+
+        {/* Submitter Approved Upcoming Reminder */}
+        {approvedUpcoming.length > 0 && (
+          <div
+            role="status"
+            className="bg-gradient-to-r from-emerald-50 via-teal-50 to-pink-50 border border-emerald-200 rounded-2xl px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-emerald-800"
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+              <span>
+                🎊 你預約於 <strong className="font-mono">{approvedUpcoming[0].targetDate}</strong> 給「
+                {approvedUpcoming[0].recipientName}」的
+                {approvedUpcoming[0].type === 'birthday' ? '生日祝福' : '浪漫表白'}已獲批！
+                {approvedUpcoming[0].targetDate === todayHkDate
+                  ? '今日已為你置頂展示中 ✨'
+                  : '當日香港 00:00 將自動置頂公開～'}
+              </span>
+            </div>
           </div>
         )}
 
@@ -426,7 +486,29 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                       )}
                     </div>
 
-                    {/* Built-in Birthday Song Player Bar (only inside active Birthday Post) */}
+                    {/* Interactive Birthday Blessing Reaction + Built-in Birthday Song Player Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/85 border border-amber-200 rounded-2xl px-3.5 py-2">
+                      <span className="text-[11px] font-bold text-slate-600">
+                        {birthdayReaction.count > 0
+                          ? `全服已有 ${birthdayReaction.count} 位朋友為壽星送上祝福 🎉`
+                          : '搶先為今日壽星送上第一個祝福吧！'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCelebrateReaction('birthday')}
+                        className={`px-3 py-1.5 text-xs font-black rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+                          birthdayReaction.hasReacted
+                            ? 'bg-gradient-to-r from-amber-400 to-rose-400 text-white border-amber-300 shadow-xs'
+                            : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+                        }`}
+                      >
+                        <Cake className="w-3.5 h-3.5" />
+                        <span>
+                          {birthdayReaction.hasReacted ? '已送出祝福' : '送出祝福'} ({birthdayReaction.count})
+                        </span>
+                      </button>
+                    </div>
+
                     <div className="bg-gradient-to-r from-amber-100/90 via-rose-100/80 to-pink-100/90 border border-amber-200 rounded-2xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <span
@@ -587,6 +669,33 @@ export const DailyNoticeBoard: React.FC<DailyNoticeBoardProps> = ({
                         {todayConfessionNotice.message}
                       </p>
                     )}
+                  </div>
+
+                  {/* Interactive Confession Cheer Reaction Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-white/85 border border-rose-200 rounded-2xl px-3.5 py-2">
+                    <span className="text-[11px] font-bold text-slate-600">
+                      {confessionReaction.count > 0
+                        ? `已有 ${confessionReaction.count} 位玩家為佢哋甜蜜集氣 💕`
+                        : '為今日心動主角集氣加油！'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCelebrateReaction('confession')}
+                      className={`px-3 py-1.5 text-xs font-black rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+                        confessionReaction.hasReacted
+                          ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white border-pink-400 shadow-xs'
+                          : 'bg-pink-50 hover:bg-pink-100 text-pink-700 border-pink-200'
+                      }`}
+                    >
+                      <Heart
+                        className={`w-3.5 h-3.5 ${
+                          confessionReaction.hasReacted ? 'fill-white' : 'fill-pink-200'
+                        }`}
+                      />
+                      <span>
+                        {confessionReaction.hasReacted ? '已為佢哋集氣' : '為佢哋集氣'} ({confessionReaction.count})
+                      </span>
+                    </button>
                   </div>
                 </article>
               )}

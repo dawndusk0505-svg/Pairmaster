@@ -1,15 +1,31 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { RotateCcw, Lightbulb, Shuffle, Clock, Palette, Trophy, Cloud, Volume2, VolumeX } from 'lucide-react';
+import {
+  RotateCcw,
+  Lightbulb,
+  Shuffle,
+  Clock,
+  Palette,
+  Trophy,
+  Cloud,
+  Volume2,
+  VolumeX,
+  Pause,
+  Play,
+  CalendarDays,
+  EyeOff,
+} from 'lucide-react';
 import { MATCH_THEMES, MatchTheme } from '../data/matchThemes';
 import { CustomThemeModal } from './CustomThemeModal';
 import { soundFx } from '../utils/audio';
 import { Grid, Point, findLinkPath, findAvailablePair } from '../utils/linkPathfinder';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { usePreloadedThemeImages } from '../utils/imagePreload';
+import { seededShuffle } from '../utils/seededRandom';
+import { useKingdomProgress } from '../hooks/useKingdomProgress';
 
 interface LinkDifficulty {
-  id: 'relaxed' | 'standard';
+  id: 'relaxed' | 'standard' | 'master';
   label: string;
   innerRows: number;
   innerCols: number;
@@ -31,9 +47,21 @@ const LINK_DIFFICULTIES: LinkDifficulty[] = [
     innerCols: 8,
     starSecondsThreshold: [85, 140],
   },
+  {
+    id: 'master',
+    label: '大師 10×6',
+    innerRows: 6,
+    innerCols: 10,
+    starSecondsThreshold: [130, 210],
+  },
 ];
 
-function shuffleGridValues(g: Grid, innerRows: number, innerCols: number): Grid {
+function shuffleGridValues(
+  g: Grid,
+  innerRows: number,
+  innerCols: number,
+  seedStr?: string
+): Grid {
   const remainingValues: string[] = [];
   const positions: Point[] = [];
 
@@ -47,10 +75,12 @@ function shuffleGridValues(g: Grid, innerRows: number, innerCols: number): Grid 
     }
   }
 
-  remainingValues.sort(() => Math.random() - 0.5);
+  const orderedValues = seedStr
+    ? seededShuffle(remainingValues, seedStr)
+    : [...remainingValues].sort(() => Math.random() - 0.5);
   const nextGrid = g.map((row) => [...row]);
   positions.forEach((pos, idx) => {
-    nextGrid[pos.r][pos.c] = remainingValues[idx];
+    nextGrid[pos.r][pos.c] = orderedValues[idx];
   });
   return nextGrid;
 }
@@ -74,15 +104,18 @@ interface LinkMatchGameProps {
   customTheme?: MatchTheme | null;
   onUpdateCustomTheme?: (theme: MatchTheme) => void;
   onOpenMyRecords?: () => void;
+  isActiveTab?: boolean;
 }
 
 export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   customTheme = null,
   onUpdateCustomTheme,
   onOpenMyRecords,
+  isActiveTab = true,
 }) => {
   const [selectedTheme, setSelectedTheme] = useState<MatchTheme>(MATCH_THEMES[0]);
   const [difficulty, setDifficulty] = useState<LinkDifficulty>(LINK_DIFFICULTIES[1]);
+  const [isDailyMode, setIsDailyMode] = useState(false);
   const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
   const [grid, setGrid] = useState<Grid>([]);
   const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);
@@ -93,6 +126,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   const [timeSec, setTimeSec] = useState(0);
   const [combo, setCombo] = useState(1);
   const [isGameActive, setIsGameActive] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [isVictory, setIsVictory] = useState(false);
   const [remainingTiles, setRemainingTiles] = useState(0);
@@ -104,10 +138,12 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   useEffect(() => {
     return soundFx.subscribe(setIsMuted);
   }, []);
+
   const [isNewRecord, setIsNewRecord] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'cloud' | 'anonymous' | 'local' | null>(null);
   const [floatingEmojis, setFloatingEmojis] = useState<FloatingLinkEmoji[]>([]);
-  const { getCloudHighScore, getPublicStageBest, saveGameScore } = useFirebase();
+  const { todayHkDate, getCloudHighScore, getPublicStageBest, saveGameScore } = useFirebase();
+  const { earnCoins } = useKingdomProgress();
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -115,16 +151,23 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   const timeRef = useRef(0);
   const remainingRef = useRef(0);
 
-  const innerRows = difficulty.innerRows;
-  const innerCols = difficulty.innerCols;
+  const activeTheme = isDailyMode ? MATCH_THEMES[0] : selectedTheme;
+  const activeDifficulty = isDailyMode ? LINK_DIFFICULTIES[1] : difficulty;
+  const effectiveThemeId = isDailyMode ? `daily-${todayHkDate}` : activeTheme.id;
+  const effectiveThemeName = isDailyMode ? `每日挑戰 ${todayHkDate.slice(5)}` : activeTheme.name;
+  const effectiveDifficultyId = isDailyMode ? 'daily' : activeDifficulty.id;
+
+  const innerRows = activeDifficulty.innerRows;
+  const innerCols = activeDifficulty.innerCols;
   const totalRows = innerRows + 2;
   const totalCols = innerCols + 2;
+  const isMasterGrid = innerCols >= 10;
 
   const availableThemes = customTheme ? [...MATCH_THEMES, customTheme] : MATCH_THEMES;
-  const { isImageFailed } = usePreloadedThemeImages(selectedTheme.items);
-  const cloudHigh = getCloudHighScore('link', difficulty.id, selectedTheme.id);
+  const { isImageFailed } = usePreloadedThemeImages(activeTheme.items);
+  const cloudHigh = getCloudHighScore('link', effectiveDifficultyId, effectiveThemeId);
   const displayedHighScore = Math.max(highScore, cloudHigh);
-  const publicStageBest = getPublicStageBest('link', difficulty.id, selectedTheme.id);
+  const publicStageBest = getPublicStageBest('link', effectiveDifficultyId, effectiveThemeId);
   const displayedHighScoreRef = useRef(displayedHighScore);
   displayedHighScoreRef.current = displayedHighScore;
 
@@ -141,13 +184,13 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
 
   useEffect(() => {
     try {
-      const key = `pairmaster_link_high_${difficulty.id}_${selectedTheme.id}`;
+      const key = `pairmaster_link_high_${effectiveDifficultyId}_${effectiveThemeId}`;
       const saved = localStorage.getItem(key);
       setHighScore(saved ? parseInt(saved, 10) : 0);
     } catch {
       setHighScore(0);
     }
-  }, [difficulty.id, selectedTheme.id]);
+  }, [effectiveDifficultyId, effectiveThemeId]);
 
   const initBoard = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -155,11 +198,14 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
 
     const totalCells = innerRows * innerCols;
     const totalPairs = totalCells / 2;
-    const maxKinds = innerRows === 4 ? 8 : 12;
+    const maxKinds = innerRows === 4 ? 8 : innerCols >= 10 ? 15 : 12;
+    const candidateItems = isDailyMode
+      ? seededShuffle(activeTheme.items, `${todayHkDate}_link_items`)
+      : [...activeTheme.items].sort(() => Math.random() - 0.5);
     const sourceItems =
-      selectedTheme.items.length >= maxKinds
-        ? selectedTheme.items.slice(0, maxKinds)
-        : selectedTheme.items;
+      candidateItems.length >= maxKinds
+        ? candidateItems.slice(0, maxKinds)
+        : candidateItems;
 
     const tilePool: string[] = [];
     for (let p = 0; p < totalPairs; p++) {
@@ -167,20 +213,26 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
       tilePool.push(item.id, item.id);
     }
 
-    tilePool.sort(() => Math.random() - 0.5);
+    const orderedPool = isDailyMode
+      ? seededShuffle(tilePool, `${todayHkDate}_link_board`)
+      : [...tilePool].sort(() => Math.random() - 0.5);
 
     let newGrid: Grid = Array.from({ length: totalRows }, () => Array(totalCols).fill(null));
     let poolIdx = 0;
     for (let r = 1; r <= innerRows; r++) {
       for (let c = 1; c <= innerCols; c++) {
-        newGrid[r][c] = tilePool[poolIdx++];
+        newGrid[r][c] = orderedPool[poolIdx++];
       }
     }
 
-    // Guarantee at least one valid move right from start
     let attempts = 0;
     while (!findAvailablePair(newGrid) && attempts < 10) {
-      newGrid = shuffleGridValues(newGrid, innerRows, innerCols);
+      newGrid = shuffleGridValues(
+        newGrid,
+        innerRows,
+        innerCols,
+        isDailyMode ? `${todayHkDate}_link_retry_${attempts}` : undefined
+      );
       attempts++;
     }
 
@@ -195,6 +247,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
     setTimeSec(0);
     setCombo(1);
     setIsGameActive(false);
+    setIsPaused(false);
     setIsResolving(false);
     setIsVictory(false);
     setIsNewRecord(false);
@@ -203,7 +256,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
     setRemainingTiles(totalCells);
     setHintCount(3);
     setShuffleCount(3);
-  }, [selectedTheme, innerRows, innerCols, totalRows, totalCols, clearAllTimeouts]);
+  }, [activeTheme, innerRows, innerCols, totalRows, totalCols, isDailyMode, todayHkDate, clearAllTimeouts]);
 
   useEffect(() => {
     initBoard();
@@ -213,8 +266,25 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
     };
   }, [initBoard, clearAllTimeouts]);
 
+  // Auto-pause on tab switch or browser minimize
   useEffect(() => {
-    if (isGameActive && !isVictory) {
+    if (!isActiveTab && isGameActive && !isVictory) {
+      setIsPaused(true);
+    }
+  }, [isActiveTab, isGameActive, isVictory]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden' && isGameActive && !isVictory) {
+        setIsPaused(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [isGameActive, isVictory]);
+
+  useEffect(() => {
+    if (isGameActive && !isVictory && !isPaused) {
       timerRef.current = setInterval(() => {
         setTimeSec((t) => {
           const next = t + 1;
@@ -226,12 +296,13 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isGameActive, isVictory]);
+  }, [isGameActive, isVictory, isPaused]);
 
   const handleVictory = useCallback(
     (finalScore: number) => {
       setIsVictory(true);
       setIsGameActive(false);
+      setIsPaused(false);
       if (timerRef.current) clearInterval(timerRef.current);
       soundFx.playVictory();
 
@@ -249,7 +320,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
       const prevBest = displayedHighScoreRef.current;
       setIsNewRecord(finalScore > 0 && finalScore > prevBest);
 
-      const key = `pairmaster_link_high_${difficulty.id}_${selectedTheme.id}`;
+      const key = `pairmaster_link_high_${effectiveDifficultyId}_${effectiveThemeId}`;
       setHighScore((prevHigh) => {
         if (finalScore > prevHigh) {
           try {
@@ -264,16 +335,17 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
 
       const finalTime = timeRef.current;
       const stars =
-        finalTime <= difficulty.starSecondsThreshold[0]
+        finalTime <= activeDifficulty.starSecondsThreshold[0]
           ? 3
-          : finalTime <= difficulty.starSecondsThreshold[1]
+          : finalTime <= activeDifficulty.starSecondsThreshold[1]
           ? 2
           : 1;
+      earnCoins(10 + stars * 8 + (isDailyMode ? 12 : 0));
       void saveGameScore({
         gameMode: 'link',
-        themeId: selectedTheme.id,
-        themeName: selectedTheme.name,
-        difficultyId: difficulty.id,
+        themeId: effectiveThemeId,
+        themeName: effectiveThemeName,
+        difficultyId: effectiveDifficultyId,
         score: finalScore,
         timeSec: finalTime,
         stars,
@@ -281,11 +353,19 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
         setSyncStatus(status);
       });
     },
-    [difficulty.id, difficulty.starSecondsThreshold, selectedTheme.id, selectedTheme.name, saveGameScore]
+    [
+      effectiveDifficultyId,
+      effectiveThemeId,
+      effectiveThemeName,
+      activeDifficulty.starSecondsThreshold,
+      isDailyMode,
+      earnCoins,
+      saveGameScore,
+    ]
   );
 
   const handleManualShuffle = () => {
-    if (shuffleCount <= 0 || isVictory || isResolving) return;
+    if (shuffleCount <= 0 || isVictory || isResolving || isPaused) return;
     soundFx.playPowerUp();
     setShuffleCount((s) => s - 1);
     setGrid((prev) => {
@@ -303,7 +383,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   };
 
   const handleTileClick = (r: number, c: number) => {
-    if (isVictory || isResolving || grid[r]?.[c] === null) return;
+    if (isVictory || isResolving || isPaused || grid[r]?.[c] === null) return;
 
     if (!isGameActive) {
       setIsGameActive(true);
@@ -343,7 +423,6 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
         const p1 = selectedPoint;
         const p2 = { r, c };
 
-        // Spawn floating cute stars/hearts at both eliminated tile centers
         const burstPool = currentCombo >= 2 ? ['🌟', '💖', '👑', '✨', '💕', '🌸'] : CUTE_LINK_EMOJIS;
         const burstPrefix = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const spawned: FloatingLinkEmoji[] = [p1, p2].flatMap((pt, ptIdx) => {
@@ -373,7 +452,6 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
             next[p1.r][p1.c] = null;
             next[p2.r][p2.c] = null;
 
-            // Count remaining tiles accurately on the mutated grid
             let rem = 0;
             for (let ri = 1; ri <= innerRows; ri++) {
               for (let ci = 1; ci <= innerCols; ci++) {
@@ -410,7 +488,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   };
 
   const handleHint = () => {
-    if (hintCount <= 0 || isVictory || isResolving) return;
+    if (hintCount <= 0 || isVictory || isResolving || isPaused) return;
     if (!isGameActive) setIsGameActive(true);
     const pair = findAvailablePair(grid);
     if (pair) {
@@ -424,7 +502,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
 
   const getItemMeta = (itemId: string | null) => {
     if (!itemId) return null;
-    return selectedTheme.items.find((i) => i.id === itemId);
+    return activeTheme.items.find((i) => i.id === itemId);
   };
 
   const formatTime = (s: number) => {
@@ -434,8 +512,8 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
   };
 
   const getStars = () => {
-    if (timeSec <= difficulty.starSecondsThreshold[0]) return 3;
-    if (timeSec <= difficulty.starSecondsThreshold[1]) return 2;
+    if (timeSec <= activeDifficulty.starSecondsThreshold[0]) return 3;
+    if (timeSec <= activeDifficulty.starSecondsThreshold[1]) return 2;
     return 1;
   };
 
@@ -443,73 +521,96 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
       {/* Top HUD with Sweet Pink Design */}
       <div className="bg-white/90 border-2 border-pink-200/80 rounded-3xl p-5 sm:p-6 space-y-5 shadow-xl shadow-pink-100/50">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-pink-100 pb-4">
-          <div className="flex items-center gap-2.5">
-            <span className="w-10 h-10 rounded-2xl bg-pink-100 text-pink-600 flex items-center justify-center text-xl shadow-xs shrink-0">
-              🔗
-            </span>
-            <div>
-              <h2 className="text-base font-black text-slate-900">連連看 · 連線消除</h2>
-              <span className="text-xs text-pink-500 font-bold">
-                連接兩張相同的圖標（最多兩道轉折）即可消除！
+        <div className="space-y-3 border-b border-pink-100 pb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <span className="w-10 h-10 rounded-2xl bg-pink-100 text-pink-600 flex items-center justify-center text-xl shadow-xs shrink-0">
+                🔗
               </span>
+              <div>
+                <h2 className="text-base font-black text-slate-900">連連看 · 連線消除</h2>
+                <span className="text-xs text-pink-500 font-bold">
+                  連接兩張相同的圖標（最多兩道轉折）即可消除！
+                </span>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-1 p-1 bg-pink-50/70 rounded-2xl border border-pink-200/60 shrink-0">
-            {LINK_DIFFICULTIES.map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                onClick={() => {
-                  soundFx.playClick();
-                  setDifficulty(d);
-                }}
-                className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer ${
-                  difficulty.id === d.id
-                    ? 'bg-pink-500 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-pink-600'
-                }`}
-              >
-                {d.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Theme Selector Strip */}
-        <div className="flex items-center gap-1.5 p-1 bg-pink-50/70 rounded-2xl border border-pink-200/60 overflow-x-auto max-w-full">
-          {availableThemes.map((theme) => (
             <button
-              key={theme.id}
               type="button"
               onClick={() => {
                 soundFx.playClick();
-                setSelectedTheme(theme);
+                setIsDailyMode((prev) => !prev);
               }}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                selectedTheme.id === theme.id
-                  ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-pink-600'
+              className={`px-3.5 py-2 text-xs font-black rounded-2xl border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 ${
+                isDailyMode
+                  ? 'bg-gradient-to-r from-amber-400 via-rose-400 to-pink-500 text-white border-amber-300'
+                  : 'bg-amber-50/80 hover:bg-amber-100 text-amber-800 border-amber-200'
               }`}
             >
-              <span>{theme.icon}</span>
-              <span>{theme.name}</span>
+              <CalendarDays className="w-3.5 h-3.5" />
+              <span>
+                {isDailyMode ? `🌟 今日每日挑戰 (${todayHkDate})` : '切換「今日每日挑戰 🌟」'}
+              </span>
             </button>
-          ))}
+          </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              soundFx.playClick();
-              setIsCustomModalOpen(true);
-            }}
-            title="自訂專屬公仔卡通牌組"
-            className="px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 bg-white border border-pink-300 text-pink-600 hover:bg-pink-100 shadow-xs"
-          >
-            <Palette className="w-3.5 h-3.5 text-pink-500" />
-            <span>{customTheme ? '編輯自訂' : '自訂公仔'}</span>
-          </button>
+          {!isDailyMode && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 p-1 bg-pink-50/70 rounded-2xl border border-pink-200/60 overflow-x-auto max-w-full">
+                {availableThemes.map((theme) => (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      setSelectedTheme(theme);
+                    }}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                      selectedTheme.id === theme.id
+                        ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-pink-600'
+                    }`}
+                  >
+                    <span>{theme.icon}</span>
+                    <span>{theme.name}</span>
+                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    setIsCustomModalOpen(true);
+                  }}
+                  title="自訂專屬公仔卡通牌組"
+                  className="px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 bg-white border border-pink-300 text-pink-600 hover:bg-pink-100 shadow-xs"
+                >
+                  <Palette className="w-3.5 h-3.5 text-pink-500" />
+                  <span>{customTheme ? '編輯自訂' : '自訂公仔'}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1 p-1 bg-pink-50/70 rounded-2xl border border-pink-200/60 overflow-x-auto max-w-full shrink-0">
+                {LINK_DIFFICULTIES.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      setDifficulty(d);
+                    }}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer ${
+                      difficulty.id === d.id
+                        ? 'bg-pink-500 text-white shadow-sm'
+                        : 'text-slate-600 hover:text-pink-600'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Meters */}
@@ -528,6 +629,9 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
             </div>
             <span className="text-2xl font-black font-mono tabular-nums text-slate-800">
               {formatTime(timeSec)}
+              {isPaused && (
+                <span className="text-xs text-amber-600 ml-1 font-sans">已暫停</span>
+              )}
             </span>
           </div>
 
@@ -546,12 +650,12 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
           </div>
         </div>
 
-        {/* Stage Public Best & Personal Best Strip (Visible above board) */}
+        {/* Stage Public Best & Personal Best Strip */}
         <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-amber-50/90 via-pink-50/80 to-rose-50/70 border border-amber-200/80 text-xs">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-bold text-slate-700">
             <div className="flex items-center gap-1.5">
               <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
-              <span>全服本關最高：</span>
+              <span>{isDailyMode ? '今日全服第一：' : '全服本關最高：'}</span>
               <span className="font-mono font-black text-amber-600 text-sm tabular-nums">
                 {publicStageBest ? `${publicStageBest.highScore} 分` : '尚無人上榜'}
               </span>
@@ -596,9 +700,9 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
             <button
               type="button"
               onClick={handleHint}
-              disabled={hintCount <= 0 || isVictory || isResolving}
+              disabled={hintCount <= 0 || isVictory || isResolving || isPaused}
               className={`px-3 py-1.5 text-xs rounded-xl border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                hintCount > 0 && !isResolving
+                hintCount > 0 && !isResolving && !isPaused
                   ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 shadow-xs'
                   : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
               }`}
@@ -610,9 +714,9 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
             <button
               type="button"
               onClick={handleManualShuffle}
-              disabled={shuffleCount <= 0 || isVictory || isResolving}
+              disabled={shuffleCount <= 0 || isVictory || isResolving || isPaused}
               className={`px-3 py-1.5 text-xs rounded-xl border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                shuffleCount > 0 && !isResolving
+                shuffleCount > 0 && !isResolving && !isPaused
                   ? 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 shadow-xs'
                   : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
               }`}
@@ -622,9 +726,26 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             {!isGameActive && !isVictory && (
               <span className="text-[11px] text-pink-500 font-bold">點擊任意方塊開始計時 ✨</span>
+            )}
+            {isGameActive && !isVictory && (
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playClick();
+                  setIsPaused((p) => !p);
+                }}
+                className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 ${
+                  isPaused
+                    ? 'text-white bg-amber-500 hover:bg-amber-600 border-amber-500'
+                    : 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200'
+                }`}
+              >
+                {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                <span>{isPaused ? '繼續遊戲' : '暫停'}</span>
+              </button>
             )}
             <button
               type="button"
@@ -632,7 +753,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
                 const muted = soundFx.toggleMute();
                 if (!muted) soundFx.playClick();
               }}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 ${
+              className={`px-2.5 py-1.5 text-xs font-bold rounded-xl border transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 ${
                 isMuted
                   ? 'text-rose-700 bg-rose-50 hover:bg-rose-100 border-rose-300'
                   : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
@@ -640,16 +761,11 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
               title={isMuted ? '目前為靜音狀態，點擊開啟遊戲音效' : '遊戲音效開啟中，點擊可靜音'}
             >
               {isMuted ? (
-                <>
-                  <VolumeX className="w-3.5 h-3.5 text-rose-500" />
-                  <span>已靜音 · 點此開聲</span>
-                </>
+                <VolumeX className="w-3.5 h-3.5 text-rose-500" />
               ) : (
-                <>
-                  <Volume2 className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>音效開</span>
-                </>
+                <Volume2 className="w-3.5 h-3.5 text-emerald-500" />
               )}
+              <span className="hidden sm:inline">{isMuted ? '已靜音' : '音效開'}</span>
             </button>
             <button
               type="button"
@@ -666,10 +782,9 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
         </div>
       </div>
 
-      {/* Board Layout Container */}
-      <div className="bg-white/70 rounded-3xl border-2 border-pink-200/70 p-2 sm:p-4 shadow-lg shadow-pink-100 overflow-visible">
-        {/* Tightly wrapped unpadded relative layer so SVG laser & floating emojis align dead-center with tiles */}
-        <div className="relative w-full">
+      {/* Board Layout Container with Anti-Peek Pause Overlay */}
+      <div className="relative bg-white/70 rounded-3xl border-2 border-pink-200/70 p-1.5 sm:p-4 shadow-lg shadow-pink-100 overflow-visible">
+        <div className={`relative w-full transition-[filter] duration-200 ${isPaused ? 'blur-xl pointer-events-none' : ''}`}>
           {floatingEmojis.length > 0 && (
             <div className="absolute inset-0 pointer-events-none z-40 overflow-visible" aria-hidden="true">
               {floatingEmojis.map((fx) => (
@@ -710,7 +825,7 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
           )}
 
           <div
-            className="grid gap-1 sm:gap-2 select-none"
+            className={`grid select-none ${isMasterGrid ? 'gap-0.5 sm:gap-1.5' : 'gap-1 sm:gap-2'}`}
             style={{
               gridTemplateColumns: `repeat(${totalCols}, minmax(0, 1fr))`,
               gridTemplateRows: `repeat(${totalRows}, minmax(0, 1fr))`,
@@ -741,8 +856,8 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
                     type="button"
                     onClick={() => handleTileClick(r, c)}
                     aria-label={meta?.name || '方塊'}
-                    className={`aspect-square rounded-xl sm:rounded-2xl border-2 flex flex-col items-center justify-center transition-transform duration-150 cursor-pointer shadow-xs relative group overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500 ${
-                      meta?.imageUrl ? 'p-0.5 sm:p-1' : ''
+                    className={`aspect-square rounded-lg sm:rounded-2xl border-2 flex flex-col items-center justify-center transition-transform duration-150 cursor-pointer shadow-xs relative group overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500 ${
+                      meta?.imageUrl ? (isMasterGrid ? 'p-0.5' : 'p-0.5 sm:p-1') : ''
                     } ${
                       isSelected
                         ? 'bg-pink-100 border-pink-500 scale-105 shadow-pink-300/50 shadow-md ring-2 ring-pink-400'
@@ -753,10 +868,12 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
                   >
                     {meta?.imageUrl && !isImageFailed(meta.imageUrl) ? (
                       <>
-                        <div className="relative w-full flex-1 min-h-0 rounded-lg sm:rounded-xl overflow-hidden bg-pink-50 flex items-center justify-center">
+                        <div className="relative w-full flex-1 min-h-0 rounded-md sm:rounded-xl overflow-hidden bg-pink-50 flex items-center justify-center">
                           <span
                             aria-hidden="true"
-                            className="absolute inset-0 flex items-center justify-center text-lg sm:text-2xl select-none opacity-80"
+                            className={`absolute inset-0 flex items-center justify-center ${
+                              isMasterGrid ? 'text-sm sm:text-xl' : 'text-lg sm:text-2xl'
+                            } select-none opacity-80`}
                           >
                             {meta.symbol}
                           </span>
@@ -770,7 +887,9 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
                           />
                         </div>
                         <span
-                          className={`text-[8px] sm:text-[9px] font-extrabold truncate max-w-full px-0.5 mt-0.5 leading-tight ${
+                          className={`${
+                            isMasterGrid ? 'hidden sm:block text-[8px]' : 'text-[8px] sm:text-[9px]'
+                          } font-extrabold truncate max-w-full px-0.5 mt-0.5 leading-tight ${
                             isSelected ? 'text-pink-700' : 'text-slate-600'
                           }`}
                         >
@@ -779,11 +898,17 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
                       </>
                     ) : (
                       <>
-                        <span className="text-xl sm:text-2xl md:text-3xl filter drop-shadow-xs">
+                        <span
+                          className={`${
+                            isMasterGrid ? 'text-base sm:text-2xl' : 'text-xl sm:text-2xl md:text-3xl'
+                          } filter drop-shadow-xs`}
+                        >
                           {meta?.symbol}
                         </span>
                         <span
-                          className={`text-[9px] sm:text-[10px] font-extrabold truncate max-w-full px-0.5 mt-0.5 ${
+                          className={`${
+                            isMasterGrid ? 'hidden sm:block text-[8px]' : 'text-[9px] sm:text-[10px]'
+                          } font-extrabold truncate max-w-full px-0.5 mt-0.5 ${
                             isSelected ? 'text-pink-700' : 'text-slate-600'
                           }`}
                         >
@@ -797,14 +922,40 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
             )}
           </div>
         </div>
+
+        {/* Frosted Anti-Peek Pause Overlay */}
+        {isPaused && (
+          <div className="absolute inset-0 z-20 rounded-3xl bg-white/80 backdrop-blur-lg border-2 border-pink-300 flex flex-col items-center justify-center p-6 text-center space-y-4">
+            <span className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shadow-sm">
+              <EyeOff className="w-7 h-7" />
+            </span>
+            <div className="space-y-1">
+              <h3 className="text-lg font-black text-slate-900">連連看已暫停 · 防偷看保護中</h3>
+              <p className="text-xs font-bold text-slate-500">
+                計時器已暫停，準備好隨時繼續連線消除！
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                setIsPaused(false);
+              }}
+              className="px-6 py-2.5 text-sm font-black text-white bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 rounded-2xl shadow-md shadow-pink-200 flex items-center gap-2 cursor-pointer active:scale-95"
+            >
+              <Play className="w-4 h-4" />
+              <span>繼續遊戲</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Footer Info */}
       <div className="flex flex-wrap items-center justify-between text-xs text-pink-600 font-bold px-2 gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span>網格規模：{innerCols} × {innerRows} (共 {innerRows * innerCols} 方塊)</span>
+          <span>主題：{effectiveThemeName}</span>
           <span aria-hidden="true">·</span>
-          <span>最大 2 道折角路徑</span>
+          <span>網格規模：{innerCols} × {innerRows} (共 {innerRows * innerCols} 方塊)</span>
           <span aria-hidden="true">·</span>
           <span>無死角自動重排</span>
         </div>
@@ -826,11 +977,16 @@ export const LinkMatchGame: React.FC<LinkMatchGameProps> = ({
             </div>
 
             <div className="space-y-1">
-              <h2 className="text-2xl font-black text-pink-600 tracking-tight">連連看大圓滿通關！🎉</h2>
-              <p className="text-sm text-slate-600 font-medium">眼明手快，全部小方塊都消除光光啦～</p>
+              <h2 className="text-2xl font-black text-pink-600 tracking-tight">
+                {isDailyMode ? '今日連連看挑戰通關！🎉' : '連連看大圓滿通關！🎉'}
+              </h2>
+              <p className="text-sm text-slate-600 font-medium">
+                {isDailyMode
+                  ? `已完成 ${todayHkDate} 全服同盤連連看！`
+                  : '眼明手快，全部小方塊都消除光光啦～'}
+              </p>
             </div>
 
-            {/* Stars */}
             <div className="flex items-center justify-center gap-2 text-3xl text-amber-400">
               {[1, 2, 3].map((starIdx) => (
                 <span

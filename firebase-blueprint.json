@@ -24,6 +24,13 @@
           "maxLength": 500,
           "description": "Avatar photo URL."
         },
+        "avatarSpiritId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]*$",
+          "description": "Selected Candy Spirit character avatar ID."
+        },
         "favoriteMbti": {
           "type": "string",
           "minLength": 4,
@@ -57,7 +64,7 @@
         },
         "gameMode": {
           "type": "string",
-          "enum": ["flip", "link"]
+          "enum": ["flip", "link", "merge", "cpstack", "conveyor", "tower", "duel"]
         },
         "themeId": {
           "type": "string",
@@ -225,9 +232,16 @@
           "minLength": 1,
           "maxLength": 60
         },
+        "avatarSpiritId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]*$",
+          "description": "Optional Candy Spirit character avatar ID."
+        },
         "gameMode": {
           "type": "string",
-          "enum": ["flip", "link"]
+          "enum": ["flip", "link", "merge", "cpstack", "conveyor", "tower", "duel"]
         },
         "themeId": {
           "type": "string",
@@ -616,6 +630,50 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "NoticeReaction": {
+      "title": "NoticeReaction",
+      "description": "One-per-device public blessing/heart reaction on an active daily Birthday or Confession notice.",
+      "type": "object",
+      "properties": {
+        "slotId": {
+          "type": "string",
+          "minLength": 12,
+          "maxLength": 32,
+          "pattern": "^(birthday|confession)_[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "noticeType": {
+          "type": "string",
+          "enum": ["birthday", "confession"]
+        },
+        "activeDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "actorUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "deviceId": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "emoji": {
+          "type": "string",
+          "enum": ["cake", "heart", "party"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["slotId", "noticeType", "activeDate", "actorUid", "deviceId", "emoji", "createdAt"]
     }
   },
   "firestore": {
@@ -662,6 +720,10 @@
     "/visitors/{deviceId}": {
       "schema": { "$ref": "#/entities/Visitor" },
       "description": "Unique-per-device visitor analytics log readable only by super admin."
+    },
+    "/noticeReactions/{reactionId}": {
+      "schema": { "$ref": "#/entities/NoticeReaction" },
+      "description": "One-per-device blessing/heart reactions for active daily notices."
     }
   }
 }

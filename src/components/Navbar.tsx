@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Sparkles, QrCode, Trophy, LogIn, LogOut, ShieldCheck, Users } from 'lucide-react';
+import { Volume2, VolumeX, Sparkles, QrCode, Trophy, LogIn, LogOut, ShieldCheck, Users, Pencil } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { CANDY_SPIRIT_ITEMS } from '../data/matchThemes';
+import { PWAInstallButton } from './PWAInstallButton';
 
-export type ActiveTab = 'flip' | 'link' | 'chemistry' | 'swipe' | 'fortune';
+export type ActiveTab = 'arcade' | 'collection' | 'chemistry' | 'swipe' | 'fortune';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -14,6 +15,7 @@ interface NavbarProps {
   onOpenLeaderboard?: () => void;
   onOpenAdmin?: () => void;
   onOpenVisitors?: () => void;
+  onOpenProfile?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -24,6 +26,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenLeaderboard,
   onOpenAdmin,
   onOpenVisitors,
+  onOpenProfile,
 }) => {
   const [isMuted, setIsMuted] = useState(soundFx.getIsMuted());
   const {
@@ -31,6 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     isAdmin,
     isSuperAdmin,
     gameDisplayName,
+    avatarSpiritId,
     pendingNoticeRequests,
     externalVisitorCount,
     user,
@@ -40,7 +44,9 @@ export const Navbar: React.FC<NavbarProps> = ({
     signOutUser,
   } = useFirebase();
 
-  const matchedSpirit = CANDY_SPIRIT_ITEMS.find((s) => s.name === gameDisplayName);
+  const matchedSpirit =
+    (avatarSpiritId ? CANDY_SPIRIT_ITEMS.find((s) => s.id === avatarSpiritId) : undefined) ||
+    CANDY_SPIRIT_ITEMS.find((s) => s.name === gameDisplayName);
 
   useEffect(() => {
     return soundFx.subscribe(setIsMuted);
@@ -65,7 +71,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           onClick={(e) => {
             e.preventDefault();
             soundFx.playClick();
-            onSelectTab('flip');
+            onSelectTab('arcade');
           }}
           className="text-base sm:text-lg font-extrabold tracking-tight text-pink-600 whitespace-nowrap shrink-0 flex items-center gap-2 group"
         >
@@ -80,8 +86,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         <nav className="hidden lg:flex items-center gap-5 text-sm font-bold">
           {(
             [
-              ['flip', '翻牌記憶'],
-              ['link', '連連看'],
+              ['arcade', '糖果遊戲廳'],
+              ['collection', '星幣圖鑑牆'],
               ['chemistry', '契合測算'],
               ['swipe', '心動卡牌'],
               ['fortune', '幸運籤卡'],
@@ -177,6 +183,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
+          <PWAInstallButton />
+
           <button
             type="button"
             onClick={handleToggleSound}
@@ -203,29 +211,41 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {authReady && (
             isVerifiedGoogleUser && user ? (
-              <div className="flex items-center gap-1 bg-pink-50/90 border border-pink-200 rounded-xl pl-1.5 pr-1 py-1">
-                {matchedSpirit?.imageUrl ? (
-                  <img
-                    src={matchedSpirit.imageUrl}
-                    alt={gameDisplayName}
-                    referrerPolicy="no-referrer"
-                    className="w-5 h-5 rounded-lg object-cover border border-pink-200"
-                  />
-                ) : user.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt={gameDisplayName}
-                    referrerPolicy="no-referrer"
-                    className="w-5 h-5 rounded-lg object-cover border border-pink-200"
-                  />
-                ) : (
-                  <span className="w-5 h-5 rounded-lg bg-pink-200 text-pink-700 text-[10px] font-black flex items-center justify-center">
-                    {(gameDisplayName || '玩')[0]}
+              <div className="flex items-center gap-0.5 bg-pink-50/90 border border-pink-200 rounded-xl pl-1 pr-1 py-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    onOpenProfile?.();
+                  }}
+                  title="編輯暱稱與糖果精靈頭像"
+                  aria-label="編輯個人檔案"
+                  className="flex items-center gap-1.5 px-1 py-0.5 rounded-lg hover:bg-white/90 transition-colors cursor-pointer"
+                >
+                  {matchedSpirit?.imageUrl ? (
+                    <img
+                      src={matchedSpirit.imageUrl}
+                      alt={gameDisplayName}
+                      referrerPolicy="no-referrer"
+                      className="w-5 h-5 rounded-lg object-cover border border-pink-200"
+                    />
+                  ) : user.photoURL ? (
+                    <img
+                      src={user.photoURL}
+                      alt={gameDisplayName}
+                      referrerPolicy="no-referrer"
+                      className="w-5 h-5 rounded-lg object-cover border border-pink-200"
+                    />
+                  ) : (
+                    <span className="w-5 h-5 rounded-lg bg-pink-200 text-pink-700 text-[10px] font-black flex items-center justify-center">
+                      {(gameDisplayName || '玩')[0]}
+                    </span>
+                  )}
+                  <span className="hidden sm:inline text-[11px] font-bold text-slate-700 max-w-[84px] truncate">
+                    {gameDisplayName}
                   </span>
-                )}
-                <span className="hidden sm:inline text-[11px] font-bold text-slate-700 max-w-[84px] truncate">
-                  {gameDisplayName}
-                </span>
+                  <Pencil className="w-2.5 h-2.5 text-pink-400 hidden sm:inline shrink-0" />
+                </button>
                 <button
                   type="button"
                   disabled={isAuthBusy}
@@ -265,7 +285,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               if (onQuickAction) {
                 onQuickAction();
               } else {
-                onSelectTab('flip');
+                onSelectTab('arcade');
               }
             }}
             className="px-3 sm:px-3.5 py-1.5 sm:py-2 text-xs font-bold text-white bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 rounded-xl transition-all shadow-md shadow-pink-200 whitespace-nowrap shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
@@ -281,8 +301,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="lg:hidden flex items-center justify-around px-2 py-1.5 border-t border-pink-100 bg-white/95 overflow-x-auto text-xs font-bold">
         {(
           [
-            ['flip', '翻牌記憶'],
-            ['link', '連連看'],
+            ['arcade', '糖果遊戲廳'],
+            ['collection', '星幣圖鑑牆'],
             ['chemistry', '契合測算'],
             ['swipe', '心動卡牌'],
             ['fortune', '幸運籤卡'],

@@ -1,7 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Navbar, ActiveTab } from './components/Navbar';
-import { FlipMatchGame } from './components/FlipMatchGame';
-import { LinkMatchGame } from './components/LinkMatchGame';
 import { CompatibilityMatcher } from './components/CompatibilityMatcher';
 import { SwipeMatchSimulator } from './components/SwipeMatchSimulator';
 import { DailyLuckyPair } from './components/DailyLuckyPair';
@@ -10,12 +8,17 @@ import { LeaderboardModal } from './components/LeaderboardModal';
 import { DailyNoticeBoard } from './components/DailyNoticeBoard';
 import { AdminNoticeModal, AdminTab } from './components/AdminNoticeModal';
 import { NoticeSubmissionModal } from './components/NoticeSubmissionModal';
+import { PlayerProfileModal } from './components/PlayerProfileModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { FirebaseProvider, useFirebase } from './contexts/FirebaseContext';
-import { Sparkles, Grid, Link as LinkIcon, Compass, Heart, Sun, X } from 'lucide-react';
+import { Sparkles, Gamepad2, Coins, Compass, Heart, Sun, X } from 'lucide-react';
 import { soundFx } from './utils/audio';
 import { MATCH_THEMES, MatchTheme } from './data/matchThemes';
 import { preloadThemeItems } from './utils/imagePreload';
 import matchBannerImg from './assets/images/match_banner_realm_1794493181788.jpg';
+
+const ArcadeHub = lazy(() => import('./components/ArcadeHub'));
+const SpiritCollectionWall = lazy(() => import('./components/SpiritCollectionWall'));
 
 function loadSavedCustomTheme(): MatchTheme | null {
   try {
@@ -32,12 +35,13 @@ function loadSavedCustomTheme(): MatchTheme | null {
 
 function AppContent() {
   const { isVerifiedGoogleUser, cloudCustomTheme, saveCustomTheme, cloudError, clearCloudError } = useFirebase();
-  const [activeTab, setActiveTab] = useState<ActiveTab>('flip');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('arcade');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [adminModalTab, setAdminModalTab] = useState<AdminTab | undefined>(undefined);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [submitModalDefaultType, setSubmitModalDefaultType] = useState<'birthday' | 'confession'>('birthday');
   const [leaderboardTab, setLeaderboardTab] = useState<'global' | 'mine'>('global');
   const [localCustomTheme, setLocalCustomTheme] = useState<MatchTheme | null>(loadSavedCustomTheme);
@@ -84,11 +88,12 @@ function AppContent() {
       <Navbar
         activeTab={activeTab}
         onSelectTab={(tab) => handleSelectAndScroll(tab, false)}
-        onQuickAction={() => handleSelectAndScroll('flip', true)}
+        onQuickAction={() => handleSelectAndScroll('arcade', true)}
         onOpenShare={() => setIsShareModalOpen(true)}
         onOpenLeaderboard={() => openLeaderboard('global')}
         onOpenAdmin={() => openAdminModal()}
         onOpenVisitors={() => openAdminModal('visitors')}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
       />
 
       {/* Cloud Error / Quota Notice Banner */}
@@ -121,6 +126,16 @@ function AppContent() {
         isOpen={isLeaderboardOpen}
         onClose={() => setIsLeaderboardOpen(false)}
         initialTab={leaderboardTab}
+        onOpenProfile={() => {
+          setIsLeaderboardOpen(false);
+          setIsProfileModalOpen(true);
+        }}
+      />
+
+      {/* Self-service Player Profile & Candy Spirit Avatar Modal */}
+      <PlayerProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
       />
 
       {/* Admin-Only Daily Notice & Visitors Control Modal */}
@@ -173,34 +188,34 @@ function AppContent() {
                   type="button"
                   onClick={() => {
                     soundFx.playClick();
-                    handleSelectAndScroll('flip', true);
+                    handleSelectAndScroll('arcade', true);
                   }}
                   className={`p-3 rounded-2xl border text-left transition-all cursor-pointer shadow-xs ${
-                    activeTab === 'flip'
+                    activeTab === 'arcade'
                       ? 'bg-white border-pink-400 ring-2 ring-pink-300 shadow-pink-100 shadow-md'
                       : 'bg-white/70 border-pink-100 hover:border-pink-300 hover:bg-white'
                   }`}
                 >
-                  <Grid className={`w-4 h-4 mb-1.5 ${activeTab === 'flip' ? 'text-pink-500' : 'text-slate-400'}`} />
-                  <span className="text-xs font-bold text-slate-800 block">翻牌記憶</span>
-                  <span className="text-[10px] text-pink-400 font-medium">糖果精靈登場</span>
+                  <Gamepad2 className={`w-4 h-4 mb-1.5 ${activeTab === 'arcade' ? 'text-pink-500' : 'text-slate-400'}`} />
+                  <span className="text-xs font-bold text-slate-800 block">糖果遊戲廳</span>
+                  <span className="text-[10px] text-pink-500 font-bold">7款配對＆新玩法</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     soundFx.playClick();
-                    handleSelectAndScroll('link', true);
+                    handleSelectAndScroll('collection', true);
                   }}
                   className={`p-3 rounded-2xl border text-left transition-all cursor-pointer shadow-xs ${
-                    activeTab === 'link'
-                      ? 'bg-white border-pink-400 ring-2 ring-pink-300 shadow-pink-100 shadow-md'
+                    activeTab === 'collection'
+                      ? 'bg-white border-amber-400 ring-2 ring-amber-300 shadow-amber-100 shadow-md'
                       : 'bg-white/70 border-pink-100 hover:border-pink-300 hover:bg-white'
                   }`}
                 >
-                  <LinkIcon className={`w-4 h-4 mb-1.5 ${activeTab === 'link' ? 'text-pink-500' : 'text-slate-400'}`} />
-                  <span className="text-xs font-bold text-slate-800 block">連連看</span>
-                  <span className="text-[10px] text-pink-400 font-medium">粉彩連線消除</span>
+                  <Coins className={`w-4 h-4 mb-1.5 ${activeTab === 'collection' ? 'text-amber-500' : 'text-slate-400'}`} />
+                  <span className="text-xs font-bold text-slate-800 block">星幣圖鑑牆</span>
+                  <span className="text-[10px] text-amber-600 font-bold">36閃卡＆CP徽章</span>
                 </button>
 
                 <button
@@ -217,7 +232,7 @@ function AppContent() {
                 >
                   <Compass className={`w-4 h-4 mb-1.5 ${activeTab === 'chemistry' ? 'text-pink-500' : 'text-slate-400'}`} />
                   <span className="text-xs font-bold text-slate-800 block">契合測算</span>
-                  <span className="text-[10px] text-pink-400 font-medium">星盤心靈合盤</span>
+                  <span className="text-[10px] text-pink-400 font-medium">下載合盤圖卡</span>
                 </button>
 
                 <button
@@ -234,7 +249,7 @@ function AppContent() {
                 >
                   <Heart className={`w-4 h-4 mb-1.5 ${activeTab === 'swipe' ? 'text-rose-500' : 'text-slate-400'}`} />
                   <span className="text-xs font-bold text-slate-800 block">心動卡牌</span>
-                  <span className="text-[10px] text-pink-400 font-medium">滑卡甜蜜破冰</span>
+                  <span className="text-[10px] text-pink-400 font-medium">好友對話保留</span>
                 </button>
 
                 <button
@@ -251,7 +266,7 @@ function AppContent() {
                 >
                   <Sun className={`w-4 h-4 mb-1.5 ${activeTab === 'fortune' ? 'text-pink-500' : 'text-slate-400'}`} />
                   <span className="text-xs font-bold text-slate-800 block">幸運籤卡</span>
-                  <span className="text-[10px] text-pink-400 font-medium">每日色彩美食</span>
+                  <span className="text-[10px] text-pink-400 font-medium">每日開運盲盒</span>
                 </button>
               </div>
             </div>
@@ -275,27 +290,52 @@ function AppContent() {
           </div>
         </section>
 
-        {/* Dynamic Interactive Mode View */}
+        {/* Preserved Tab Panels with Lazy-Loaded Heavy Arcade & Collection Modules */}
         <section id="game-workspace" className="mt-2 scroll-mt-16">
-          {activeTab === 'flip' && (
-            <FlipMatchGame
-              customTheme={effectiveCustomTheme}
-              onUpdateCustomTheme={handleUpdateCustomTheme}
-              onOpenMyRecords={() => openLeaderboard('mine')}
-            />
-          )}
-          {activeTab === 'link' && (
-            <LinkMatchGame
-              customTheme={effectiveCustomTheme}
-              onUpdateCustomTheme={handleUpdateCustomTheme}
-              onOpenMyRecords={() => openLeaderboard('mine')}
-            />
-          )}
-          {activeTab === 'chemistry' && <CompatibilityMatcher />}
-          {activeTab === 'swipe' && <SwipeMatchSimulator />}
-          {activeTab === 'fortune' && <DailyLuckyPair />}
+          <div className={activeTab === 'arcade' ? 'block' : 'hidden'}>
+            <Suspense
+              fallback={
+                <div className="max-w-4xl mx-auto p-10 text-center text-sm font-black text-pink-500">
+                  正在開啟糖果王國遊戲廳...
+                </div>
+              }
+            >
+              <ArcadeHub
+                customTheme={effectiveCustomTheme}
+                onUpdateCustomTheme={handleUpdateCustomTheme}
+                onOpenMyRecords={() => openLeaderboard('mine')}
+                onOpenCollection={() => handleSelectAndScroll('collection', true)}
+                isActiveTab={activeTab === 'arcade'}
+              />
+            </Suspense>
+          </div>
+          <div className={activeTab === 'collection' ? 'block' : 'hidden'}>
+            {activeTab === 'collection' && (
+              <Suspense
+                fallback={
+                  <div className="max-w-4xl mx-auto p-10 text-center text-sm font-black text-amber-600">
+                    正在展開 36 位糖果精靈閃卡牆...
+                  </div>
+                }
+              >
+                <SpiritCollectionWall />
+              </Suspense>
+            )}
+          </div>
+          <div className={activeTab === 'chemistry' ? 'block' : 'hidden'}>
+            <CompatibilityMatcher />
+          </div>
+          <div className={activeTab === 'swipe' ? 'block' : 'hidden'}>
+            <SwipeMatchSimulator />
+          </div>
+          <div className={activeTab === 'fortune' ? 'block' : 'hidden'}>
+            <DailyLuckyPair />
+          </div>
         </section>
       </main>
+
+      {/* Offline Status Pill */}
+      <OfflineIndicator />
 
       {/* Minimalist Pastel Pink Footer */}
       <footer className="border-t border-pink-200/70 py-6 px-4 bg-white/70 text-xs text-slate-500">
